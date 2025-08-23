@@ -1,4 +1,4 @@
-from optprob.problems import ConstrainedScalarOptimizationProblem
+from problems.optprob.problems import ConstrainedScalarOptimizationProblem
 import numpy as np
 import scipy
 
