@@ -11,8 +11,13 @@ dependencies = [
     "numpy",
     "scipy",
     "matplotlib",
+    "pandas",
     "jupyter",
     "pyyaml",
+    "tqdm",
+    "scikit-optimize",
+    "lpfgopt",
+    "xlwings"
 ]
 
 [tool.setuptools.packages.find]

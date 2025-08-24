@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 .vscode/
+.dvc/
 *.egg-info/
 
 # Mac
