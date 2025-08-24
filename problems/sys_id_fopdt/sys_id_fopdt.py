@@ -135,7 +135,7 @@ def calculate_reasonable_bounds(t, u_data, y_data):
 
 # UNIT TESTS
 # Load input-output data
-data_dir = 'data'
+data_dir = 'problems/sys_id_fopdt/data'
 filename = 'io_data_fopdt.csv'
 input_output_data = pd.read_csv(os.path.join(data_dir, filename))
 assert input_output_data.shape == (881, 4)

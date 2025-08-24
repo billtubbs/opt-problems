@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+.vscode/
+
+# Mac
+.DS_Store
+
+# Data files
+*.csv
+*.parquet
+
+# Image files
+*.jpg
+*.jpeg
+*.png

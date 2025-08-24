@@ -36,5 +36,4 @@ assert problem.best_guess == (0.23275605031813504, [0.5])
 # Find global minimum using Scipy and a good initial guess
 sol = scipy.optimize.minimize(problem, x0=2.5, bounds=problem.bounds, tol=1e-15)
 assert sol.status == 0
-print(sol.fun, sol.x.item())
 assert np.array_equal(problem.global_minimum, sol.x)
