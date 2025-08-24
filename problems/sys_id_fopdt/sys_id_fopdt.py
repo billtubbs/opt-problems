@@ -51,7 +51,6 @@ def rms_prediction_error(y_model, y_data):
 
 
 class SysIdFOPDT(ConstrainedScalarOptimizationProblem):
-
     def __init__(
         self,
         bounds,
@@ -107,6 +106,58 @@ class SysIdFOPDTRealDelay(SysIdFOPDT):
         y_model = self.simulate(K, tau, n_delay, y_base, u_base, y_init)
         rms_error = rms_prediction_error(y_model, self.y_data)
         return rms_error
+
+
+class SysIdFromFileFOPDT(SysIdFOPDT):
+    def __init__(
+        self,
+        bounds,
+        dt,
+        io_data_path,
+        u_label,
+        y_label,
+        u_base=5.0,
+        name="SysIdFOPDT",
+        global_minimum=(2.336465534800439, )
+    ):
+        io_data = pd.read_csv(io_data_path)
+        u_data = io_data[u_label].to_numpy()
+        y_data = io_data[y_label].to_numpy()
+        super().__init__(
+            bounds,
+            dt,
+            u_data,
+            y_data,
+            u_base=u_base,
+            name=name,
+            global_minimum=global_minimum
+        )
+
+
+class SysIdFromFileFOPDTRealDelay(SysIdFOPDTRealDelay):
+    def __init__(
+        self,
+        bounds,
+        dt,
+        io_data_path,
+        u_label,
+        y_label,
+        u_base=5.0,
+        name="SysIdFOPDTRealDelay",
+        global_minimum=(2.336465534800439, )
+    ):
+        io_data = pd.read_csv(io_data_path)
+        u_data = io_data[u_label]
+        y_data = io_data[y_label]
+        super().__init__(
+            bounds,
+            dt,
+            u_data,
+            y_data,
+            u_base=u_base,
+            name=name,
+            global_minimum=global_minimum
+        )
 
 
 def calculate_reasonable_bounds(t, u_data, y_data):

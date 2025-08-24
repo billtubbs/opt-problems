@@ -13,6 +13,7 @@ dependencies = [
     "matplotlib",
     "pandas",
     "jupyter",
+    "numba",
     "pyyaml",
     "tqdm",
     "scikit-optimize",
