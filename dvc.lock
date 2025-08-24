@@ -1,0 +1,39 @@
+schema: '2.0'
+stages:
+  toy_1d:
+    cmd: python -m stages.run_optimizer toy_1d
+    params:
+      params.yaml:
+        experiments.toy_1d:
+          problem:
+            name: Toy1DProblem
+          optimizers:
+            scipy.optimize.minimize:
+              name: scipy_optimize_minimize
+              args:
+                x0:
+                - 2.0
+            lpfgopt.minimize:
+              name: lpfgopt_minimize
+              args:
+                bounds:
+                - - -5.0
+                  - 5.0
+              n_trials: 20
+            skopt_gp_minimize:
+              name: skopt_gp_minimize
+              args:
+                dimensions:
+                - - -5.0
+                  - 5.0
+              kwargs:
+                n_calls: 50
+                noise: 0.0
+                n_initial_points: 10
+              n_trials: 10
+    outs:
+    - path: results/toy_1d/
+      hash: md5
+      md5: 3701f63a630d3584469dc12760a71f9b.dir
+      size: 269914
+      nfiles: 32

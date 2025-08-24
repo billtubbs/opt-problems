@@ -1,0 +1,11 @@
+stages:
+  toy_1d:
+    cmd: python -m stages.run_optimizer toy_1d
+    params:
+      - experiments.toy_1d
+    outs:
+      - results/toy_1d/
+    # metrics:
+    #   - results/toy_1d/metrics.json
+    # plots:
+    #   - results/toy_1d/plots/
