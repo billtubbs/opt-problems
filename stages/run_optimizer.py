@@ -51,6 +51,11 @@ def run_optimizer(exp_name, exp_params):
     exp_stats = {}
     for opt_name, opt_params in tqdm(exp_params['optimizers'].items()):
 
+        os.makedirs(
+            os.path.join(RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, opt_name),
+            exist_ok=True
+        )
+
         # Call optimizer function
         opt_class_name = opt_params.get('name', opt_name)
         optimizer = optimizers[opt_class_name]
@@ -89,9 +94,10 @@ def run_optimizer(exp_name, exp_params):
             )
             opt_history.index.name = 'iter'
             filename = f"fevals_{trial:0{nd}d}.csv"
-            opt_history.to_csv(
-                os.path.join(RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, filename)
+            filepath = os.path.join(
+                RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, opt_name, filename
             )
+            opt_history.to_csv(filepath)
 
             # Save best guess and summary stats
             f, x = problem.best_guess
@@ -106,7 +112,12 @@ def run_optimizer(exp_name, exp_params):
 
         exp_stats = pd.DataFrame.from_dict(exp_stats, orient='index')
         exp_stats.index.names = ["problem", "optimizer", "trial"]
-        exp_stats.to_csv(os.path.join(RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, 'stats.csv'))
+        filepath = os.path.join(
+            RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, opt_name, 'stats.csv'
+        )
+        exp_stats.to_csv(
+            filepath
+        )
 
 
 def make_plots(exp_params):
@@ -118,7 +129,6 @@ if __name__ == "__main__":
     exp_name = sys.argv[1]
     with open("params.yaml", encoding="utf-8") as f:
         params = yaml.safe_load(f.read())
-    os.makedirs(os.path.join(RESULTS_DIR, exp_name, 'results'), exist_ok=True)
     exp_params = params['experiments'][exp_name]
 
     run_optimizer(exp_name, exp_params)

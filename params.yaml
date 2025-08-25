@@ -3,19 +3,19 @@ experiments:
     problem:
       name: Toy1DProblem
     optimizers:
-      # scipy.optimize.minimize:
+      # scipy_optimize_minimize:
       #   name: scipy_optimize_minimize
       #   args:
       #     x0:
       #       - 2.0
-      lpfgopt.minimize:
+      lpfgopt_minimize:
         name: lpfgopt_minimize
         args:
           bounds:
             -
               - -5.0
               - 5.0
-        n_trials: 20
+        n_trials: 100
       # skopt_gp_minimize:
       #   name: skopt_gp_minimize
       #   args:
@@ -55,7 +55,7 @@ experiments:
       kwargs:
         u_base: 5.0
     optimizers:
-      lpfgopt.minimize:
+      lpfgopt_minimize:
         name: lpfgopt_minimize
         args:
           bounds:
@@ -80,7 +80,7 @@ experiments:
           points: 50
           tol: 0.01
           maxit: 1000
-        n_trials: 20
+        n_trials: 100
   sys_id_fopdt_real_delay:
     problem:
       name: SysIdFromFileFOPDTRealDelay
@@ -108,7 +108,7 @@ experiments:
       kwargs:
         u_base: 5.0
     optimizers:
-      lpfgopt.minimize:
+      lpfgopt_minimize:
         name: lpfgopt_minimize
         args:
           bounds:
@@ -133,7 +133,7 @@ experiments:
           points: 50
           tol: 0.01
           maxit: 1000
-        n_trials: 20
+        n_trials: 100
       # skopt_gp_minimize:
       #   name: skopt_gp_minimize
       #   args:
