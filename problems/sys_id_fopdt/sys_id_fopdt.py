@@ -87,7 +87,15 @@ class SysIdFOPDT(ConstrainedScalarOptimizationProblem):
 
 class SysIdFOPDTRealDelay(SysIdFOPDT):
 
-    def __init__(self, bounds, dt, u_data, y_data, u_base=5.0, name="SysIdFOPDTRealDelay"):
+    def __init__(
+        self,
+        bounds,
+        dt,
+        u_data,
+        y_data,
+        u_base=5.0,
+        name="SysIdFOPDTRealDelay"
+    ):
         super().__init__(
             bounds,
             dt,
@@ -130,7 +138,6 @@ class SysIdFromFileFOPDT(SysIdFOPDT):
             y_data,
             u_base=u_base,
             name=name,
-            global_minimum=global_minimum
         )
 
 
@@ -144,11 +151,10 @@ class SysIdFromFileFOPDTRealDelay(SysIdFOPDTRealDelay):
         y_label,
         u_base=5.0,
         name="SysIdFOPDTRealDelay",
-        global_minimum=(2.336465534800439, )
     ):
         io_data = pd.read_csv(io_data_path)
-        u_data = io_data[u_label]
-        y_data = io_data[y_label]
+        u_data = io_data[u_label].to_numpy()
+        y_data = io_data[y_label].to_numpy()
         super().__init__(
             bounds,
             dt,
@@ -156,7 +162,6 @@ class SysIdFromFileFOPDTRealDelay(SysIdFOPDTRealDelay):
             y_data,
             u_base=u_base,
             name=name,
-            global_minimum=global_minimum
         )
 
 
@@ -170,6 +175,7 @@ def calculate_reasonable_bounds(t, u_data, y_data):
     time_span = np.max(t) - np.min(t)
 
     # Intelligent parameter bounds
+    # These are more to do with the feasible/infeasible region - LF uses this to prevent calculating infeasible.
     # Make sure these are in the same order as elements of x
     bounds = {
         'K': (-5 * y_range / u_range, 5 * y_range / u_range),    # Process gain

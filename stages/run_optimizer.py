@@ -14,33 +14,37 @@ from problems.toy_1d import toy_1d_problem
 from problems.sys_id_fopdt import sys_id_fopdt
 
 
-# Register problems here
+RESULTS_DIR = 'results'
+STAGE_RESULTS_DIR = 'results'
+
+# Register all problem classes
 problems = {
     "Toy1DProblem": toy_1d_problem.Toy1DProblem,
     "SysIdFromFileFOPDT": sys_id_fopdt.SysIdFromFileFOPDT,
     "SysIdFromFileFOPDTRealDelay": sys_id_fopdt.SysIdFromFileFOPDTRealDelay,
 }
 
+# Register all optimizer classes
 optimizers = {
     "scipy_optimize_minimize": scipy.optimize.minimize,
     "lpfgopt_minimize": lpfgopt.minimize,
     "skopt_gp_minimize": skopt.gp_minimize,
 }
 
-RESULTS_DIR = 'results'
+
+def num_digits(n):
+    """Return the number of digits needed to represent an integer.
+    """
+    return len(str(abs(n)))
 
 
-if __name__ == "__main__":
-
-    exp_name = sys.argv[1]
-    with open("params.yaml", encoding="utf-8") as f:
-        params = yaml.safe_load(f.read())
-    os.makedirs(os.path.join(RESULTS_DIR, exp_name), exist_ok=True)
-    exp_params = params['experiments'][exp_name]
+def run_optimizer(exp_name, exp_params):
+    """Run optimizer on problem n_trials times and save results to file.
+    """
 
     # Instantiate optimization problem class
     problem_name = exp_params['problem']['name']
-    args = exp_params['problem'].get('args', []).values()
+    args = exp_params['problem'].get('args', {}).values()
     kwargs = exp_params['problem'].get('kwargs', {})
     problem = problems[problem_name](*args, **kwargs)
 
@@ -54,6 +58,9 @@ if __name__ == "__main__":
         kwargs = opt_params.get('kwargs', {})
 
         n_trials = opt_params.get('n_trials', 1)
+
+        # Used to make sure filenames are correctly sortable
+        nd = num_digits(n_trials)
 
         for trial in range(n_trials):
 
@@ -81,9 +88,9 @@ if __name__ == "__main__":
                 axis=1
             )
             opt_history.index.name = 'iter'
-            filename = f"{problem_name}_{opt_name}_fevals_{trial}.csv"
+            filename = f"fevals_{trial:0{nd}d}.csv"
             opt_history.to_csv(
-                os.path.join(RESULTS_DIR, exp_name, filename)
+                os.path.join(RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, filename)
             )
 
             # Save best guess and summary stats
@@ -99,4 +106,19 @@ if __name__ == "__main__":
 
         exp_stats = pd.DataFrame.from_dict(exp_stats, orient='index')
         exp_stats.index.names = ["problem", "optimizer", "trial"]
-        exp_stats.to_csv(os.path.join(RESULTS_DIR, exp_name, 'stats.csv'))
+        exp_stats.to_csv(os.path.join(RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, 'stats.csv'))
+
+
+def make_plots(exp_params):
+    pass
+
+
+if __name__ == "__main__":
+
+    exp_name = sys.argv[1]
+    with open("params.yaml", encoding="utf-8") as f:
+        params = yaml.safe_load(f.read())
+    os.makedirs(os.path.join(RESULTS_DIR, exp_name, 'results'), exist_ok=True)
+    exp_params = params['experiments'][exp_name]
+
+    run_optimizer(exp_name, exp_params)

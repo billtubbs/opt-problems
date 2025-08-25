@@ -1,11 +1,60 @@
 stages:
-  toy_1d:
+  # Toy 1D experiment
+  toy_1d_run:
     cmd: python -m stages.run_optimizer toy_1d
+    deps:
+      - stages/run_optimizer.py
     params:
       - experiments.toy_1d
     outs:
-      - results/toy_1d/
-    # metrics:
-    #   - results/toy_1d/metrics.json
-    # plots:
-    #   - results/toy_1d/plots/
+      - results/toy_1d/results
+  
+  toy_1d_plot:
+    cmd: python -m stages.make_plots toy_1d
+    deps:
+      - stages/make_plots.py
+      - results/toy_1d/results
+    params:
+      - experiments.toy_1d
+    outs:
+      - results/toy_1d/plots
+
+  # System Identification FOPDT experiment (with integer delay)
+  sys_id_fopdt_run:
+    cmd: python -m stages.run_optimizer sys_id_fopdt
+    deps:
+      - stages/run_optimizer.py
+    params:
+      - experiments.sys_id_fopdt
+    outs:
+      - results/sys_id_fopdt/results
+  
+  sys_id_fopdt_plot:
+    cmd: python -m stages.make_plots sys_id_fopdt
+    deps:
+      - stages/make_plots.py
+      - results/sys_id_fopdt/results
+    params:
+      - experiments.sys_id_fopdt
+    outs:
+      - results/sys_id_fopdt/plots
+
+  # System Identification FOPDT experiment with real delay  
+  sys_id_fopdt_real_delay_run:
+    cmd: python -m stages.run_optimizer sys_id_fopdt_real_delay
+    deps:
+      - stages/run_optimizer.py
+    params:
+      - experiments.sys_id_fopdt_real_delay
+    outs:
+      - results/sys_id_fopdt_real_delay/results
+  
+  sys_id_fopdt_real_delay_plot:
+    cmd: python -m stages.make_plots sys_id_fopdt_real_delay
+    deps:
+      - stages/make_plots.py
+      - results/sys_id_fopdt_real_delay/results
+    params:
+      - experiments.sys_id_fopdt_real_delay
+    outs:
+      - results/sys_id_fopdt_real_delay/plots

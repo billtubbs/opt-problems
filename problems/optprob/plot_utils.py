@@ -57,6 +57,7 @@ def best_guesses_plot_n_repeats(
     best_guesses=True,
     title=None
 ):
+
     n_repeats = len(fun_evals)
 
     if best_guesses:
@@ -66,7 +67,7 @@ def best_guesses_plot_n_repeats(
         ]
 
     if title is None:
-        title = f'Optimizer Convergence - {n_repeats} Iterations'
+        title = f'Optimizer Convergence - {n_repeats} Trials'
 
     # Find the maximum length among all sequences
     max_len = max(len(f) for f in fun_evals)
@@ -116,3 +117,5 @@ def best_guesses_plot_n_repeats(
     plt.legend()
     
     return ax
+
+
