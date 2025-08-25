@@ -40,6 +40,15 @@ def make_f_histogram(stats, exp_name, opt_name, n_bins=51):
 def make_plots(exp_name, exp_params):
     """Make plots of results and save as image files."""
 
+    # Load summary stats file
+    filepath = os.path.join(
+        RESULTS_DIR, 
+        exp_name, 
+        PREV_STAGE_RESULTS_DIR, 
+        "stats.csv"
+    )
+    stats = pd.read_csv(filepath)
+
     for opt_name in tqdm(exp_params['optimizers']):
 
         os.makedirs(
@@ -47,17 +56,12 @@ def make_plots(exp_name, exp_params):
             exist_ok=True
         )
 
-        
         # Make histogram of best f(x) values for all trials
-        filepath = os.path.join(
-            RESULTS_DIR, 
-            exp_name, 
-            PREV_STAGE_RESULTS_DIR, 
-            opt_name, 
-            "stats.csv"
+        ax = make_f_histogram(
+            stats.loc[stats['optimizer'] == opt_name],
+            exp_name,
+            opt_name
         )
-        stats = pd.read_csv(filepath)
-        ax = make_f_histogram(stats, exp_name, opt_name)
         plt.tight_layout()
         filename = f"f_histogram_{exp_name}.pdf"
         filepath = os.path.join(

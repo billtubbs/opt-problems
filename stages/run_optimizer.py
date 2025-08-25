@@ -48,8 +48,12 @@ def run_optimizer(exp_name, exp_params):
     kwargs = exp_params['problem'].get('kwargs', {})
     problem = problems[problem_name](*args, **kwargs)
 
+    # Collect summary stats of all trials
     exp_stats = {}
-    for opt_name, opt_params in tqdm(exp_params['optimizers'].items()):
+
+    pbar_outer = tqdm(exp_params['optimizers'].items(), desc="Optimizer")
+    for opt_name, opt_params in pbar_outer:
+        pbar_outer.set_description(opt_name)
 
         os.makedirs(
             os.path.join(RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, opt_name),
@@ -67,11 +71,11 @@ def run_optimizer(exp_name, exp_params):
         # Used to make sure filenames are correctly sortable
         nd = num_digits(n_trials)
 
-        for trial in range(n_trials):
+        for trial in tqdm(range(n_trials), desc="Trials", leave=False):
 
             # Call optimizer
             t_start = time.time()
-            sol = solve_problem_with_optimizer(
+            res = solve_problem_with_optimizer(
                 problem, optimizer, *args, **kwargs
             )
             elapsed_time = time.time() - t_start
@@ -108,16 +112,18 @@ def run_optimizer(exp_name, exp_params):
             }
             x = np.array(x).tolist()
             stats.update({f'x{i}': xi for i, xi in enumerate(x)})
+            optional_attributes = ['success', 'status']
+            for name in optional_attributes:
+                if name in res:
+                    stats[f'res_{name}'] = getattr(res, name)
             exp_stats[(problem_name, opt_name, trial)] = stats
 
-        exp_stats = pd.DataFrame.from_dict(exp_stats, orient='index')
-        exp_stats.index.names = ["problem", "optimizer", "trial"]
-        filepath = os.path.join(
-            RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, opt_name, 'stats.csv'
-        )
-        exp_stats.to_csv(
-            filepath
-        )
+    exp_stats = pd.DataFrame.from_dict(exp_stats, orient='index')
+    exp_stats.index.names = ["problem", "optimizer", "trial"]
+    filepath = os.path.join(
+        RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, 'stats.csv'
+    )
+    exp_stats.to_csv(filepath)
 
 
 def make_plots(exp_params):

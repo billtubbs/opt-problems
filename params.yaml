@@ -3,11 +3,11 @@ experiments:
     problem:
       name: Toy1DProblem
     optimizers:
-      # scipy_optimize_minimize:
-      #   name: scipy_optimize_minimize
-      #   args:
-      #     x0:
-      #       - 2.0
+      scipy_optimize_minimize:
+        name: scipy_optimize_minimize
+        args:
+          x0:
+            - 2.0
       lpfgopt_minimize:
         name: lpfgopt_minimize
         args:
@@ -16,18 +16,18 @@ experiments:
               - -5.0
               - 5.0
         n_trials: 100
-      # skopt_gp_minimize:
-      #   name: skopt_gp_minimize
-      #   args:
-      #     dimensions:
-      #       -
-      #         - -5.0
-      #         - 5.0
-      #   kwargs:
-      #     n_calls: 50
-      #     noise: 0.0
-      #     n_initial_points: 10
-      #   n_trials: 10
+      skopt_gp_minimize:
+        name: skopt_gp_minimize
+        args:
+          dimensions:
+            -
+              - -5.0
+              - 5.0
+        kwargs:
+          n_calls: 50
+          noise: 0.0
+          n_initial_points: 10
+        n_trials: 10
   sys_id_fopdt:
     problem:
       name: SysIdFromFileFOPDT
@@ -81,6 +81,30 @@ experiments:
           tol: 0.01
           maxit: 1000
         n_trials: 100
+      # skopt_gp_minimize:
+      #   name: skopt_gp_minimize
+      #   args:
+      #     dimensions:  # TODO: Get dimensions from problem
+      #       -
+      #         - -86.00479336990831
+      #         - 86.00479336990831
+      #       -
+      #         - 15.08
+      #         - 4406.4
+      #       -
+      #         - 0
+      #         - 88
+      #       -
+      #         - 390.7399912087402
+      #         - 609.27040320874
+      #       -
+      #         - 474.7938764
+      #         - 584.0590823999999
+      #   kwargs:
+      #     n_calls: 250
+      #     noise: 0.0
+      #     n_initial_points: 10
+      #   n_trials: 10
   sys_id_fopdt_real_delay:
     problem:
       name: SysIdFromFileFOPDTRealDelay
@@ -93,8 +117,8 @@ experiments:
             - 15.08
             - 4406.4
           -
-            - 0
-            - 1320
+            - 0.0
+            - 1327.04
           -
             - 390.7399912087402
             - 609.27040320874
@@ -120,7 +144,7 @@ experiments:
               - 4406.4
             -
               - 0.0
-              - 88.0
+              - 1327.04
             -
               - 390.7399912087402
               - 609.27040320874
@@ -134,27 +158,27 @@ experiments:
           tol: 0.01
           maxit: 1000
         n_trials: 100
-      # skopt_gp_minimize:
-      #   name: skopt_gp_minimize
-      #   args:
-      #     dimensions:  # TODO: Get dimensions from problem
-      #       -
-      #         - -86.00479336990831
-      #         - 86.00479336990831
-      #       -
-      #         - 15.08
-      #         - 4406.4
-      #       -
-      #         - 0.0
-      #         - 88.0
-      #       -
-      #         - 390.7399912087402
-      #         - 609.27040320874
-      #       -
-      #         - 474.7938764
-      #         - 584.0590823999999
-      #   kwargs:
-      #     n_calls: 50
-      #     noise: 0.0
-      #     n_initial_points: 10
-      #   n_trials: 10
+      skopt_gp_minimize:
+        name: skopt_gp_minimize
+        args:
+          dimensions:
+            -
+              - -86.00479336990831
+              - 86.00479336990831
+            -
+              - 15.08
+              - 4406.4
+            -
+              - 0.0
+              - 1327.04
+            -
+              - 390.7399912087402
+              - 609.27040320874
+            -
+              - 474.7938764
+              - 584.0590823999999
+        kwargs:
+          n_calls: 250
+          noise: 0.0
+          n_initial_points: 10
+        n_trials: 10
