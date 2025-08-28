@@ -144,12 +144,12 @@ stages:
       size: 1930643
       nfiles: 21
   sys_id_fopdt_run:
-    cmd: python -m stages.run_optimizer sys_id_fopdt
+    cmd: python -m stages.run_optimizers sys_id_fopdt
     deps:
-    - path: stages/run_optimizer.py
+    - path: stages/run_optimizers.py
       hash: md5
-      md5: 5127d48ff8637f25ea20253ae865d3d0
-      size: 4011
+      md5: 178971eed99a98d986ac948280a2b6dc
+      size: 6898
     params:
       params.yaml:
         experiments.sys_id_fopdt:
@@ -182,8 +182,8 @@ stages:
                   - 86.00479336990831
                 - - 15.08
                   - 4406.4
-                - - 0.0
-                  - 88.0
+                - - 0
+                  - 88
                 - - 390.7399912087402
                   - 609.27040320874
                 - - 474.7938764
@@ -195,24 +195,58 @@ stages:
                 tol: 0.01
                 maxit: 1000
               n_trials: 100
+            skopt_gp_minimize:
+              name: skopt_gp_minimize
+              args:
+                dimensions:
+                - type: real
+                  name: K
+                  low: -86.00479336990831
+                  high: 86.00479336990831
+                  prior: uniform
+                - type: real
+                  name: tau
+                  low: 15.08
+                  high: 4406.4
+                  prior: uniform
+                - type: integer
+                  name: theta
+                  low: 0
+                  high: 88
+                  prior: uniform
+                - type: real
+                  name: y_base
+                  low: 390.7399912087402
+                  high: 609.27040320874
+                  prior: uniform
+                - type: real
+                  name: y_init
+                  low: 474.7938764
+                  high: 584.0590823999999
+                  prior: uniform
+              kwargs:
+                n_calls: 250
+                noise: 0.0
+                n_initial_points: 10
+              n_trials: 20
     outs:
     - path: results/sys_id_fopdt/results
       hash: md5
-      md5: 3c962370165c14cfedb6c22d40ee4372.dir
-      size: 9127921
-      nfiles: 101
+      md5: 865cd96c3f36eab057a81666589f1773.dir
+      size: 9489058
+      nfiles: 121
   sys_id_fopdt_plot:
     cmd: python -m stages.make_plots sys_id_fopdt
     deps:
     - path: results/sys_id_fopdt/results
       hash: md5
-      md5: 3c962370165c14cfedb6c22d40ee4372.dir
-      size: 9127921
+      md5: 1c8ff2957d161cd8d45d1ba889b39a04.dir
+      size: 9107932
       nfiles: 101
     - path: stages/make_plots.py
       hash: md5
-      md5: 60f2760c510c1ec5c54b0adc53d07621
-      size: 3551
+      md5: 7bd16ee454a4561fd726ae512871d029
+      size: 3652
     params:
       params.yaml:
         experiments.sys_id_fopdt:
@@ -245,8 +279,8 @@ stages:
                   - 86.00479336990831
                 - - 15.08
                   - 4406.4
-                - - 0.0
-                  - 88.0
+                - - 0
+                  - 88
                 - - 390.7399912087402
                   - 609.27040320874
                 - - 474.7938764
@@ -261,16 +295,16 @@ stages:
     outs:
     - path: results/sys_id_fopdt/plots
       hash: md5
-      md5: cfa5f01c2ce4b9e7f9883494cded54f2.dir
-      size: 42539
+      md5: 4ccfa35c2547bc526ef55c75a9e825a7.dir
+      size: 41588
       nfiles: 2
   sys_id_fopdt_real_delay_run:
-    cmd: python -m stages.run_optimizer sys_id_fopdt_real_delay
+    cmd: python -m stages.run_optimizers sys_id_fopdt_real_delay
     deps:
-    - path: stages/run_optimizer.py
+    - path: stages/run_optimizers.py
       hash: md5
-      md5: 11eaa5e437e8a0d27abac050c672305d
-      size: 4318
+      md5: 178971eed99a98d986ac948280a2b6dc
+      size: 6898
     params:
       params.yaml:
         experiments.sys_id_fopdt_real_delay:
@@ -295,8 +329,8 @@ stages:
             kwargs:
               u_base: 5.0
           optimizers:
-            lpfgopt_minimize:
-              name: lpfgopt_minimize
+            lpfgopt_minimize_rand_init:
+              name: lpfgopt_minimize_rand_init
               args:
                 bounds:
                 - - -86.00479336990831
@@ -310,49 +344,39 @@ stages:
                 - - 474.7938764
                   - 584.0590823999999
               kwargs:
-                discrete:
-                - 2
+                init_range:
+                - - -12.0
+                  - -8.0
+                - - 150.0
+                  - 200.0
+                - - 150.0
+                  - 250.0
+                - - 470.0
+                  - 500.0
+                - - 470.0
+                  - 490.0
                 points: 50
                 tol: 0.01
                 maxit: 1000
               n_trials: 100
-            skopt_gp_minimize:
-              name: skopt_gp_minimize
-              args:
-                dimensions:
-                - - -86.00479336990831
-                  - 86.00479336990831
-                - - 15.08
-                  - 4406.4
-                - - 0.0
-                  - 1327.04
-                - - 390.7399912087402
-                  - 609.27040320874
-                - - 474.7938764
-                  - 584.0590823999999
-              kwargs:
-                n_calls: 250
-                noise: 0.0
-                n_initial_points: 10
-              n_trials: 10
     outs:
     - path: results/sys_id_fopdt_real_delay/results
       hash: md5
-      md5: 53f3abab2ca2c00afcb27f457a2e0364.dir
-      size: 9600639
-      nfiles: 111
+      md5: 716dce5177d098bc13a6a0adb0b6b63a.dir
+      size: 12055531
+      nfiles: 101
   sys_id_fopdt_real_delay_plot:
     cmd: python -m stages.make_plots sys_id_fopdt_real_delay
     deps:
     - path: results/sys_id_fopdt_real_delay/results
       hash: md5
-      md5: 53f3abab2ca2c00afcb27f457a2e0364.dir
-      size: 9600639
-      nfiles: 111
+      md5: 716dce5177d098bc13a6a0adb0b6b63a.dir
+      size: 12055531
+      nfiles: 101
     - path: stages/make_plots.py
       hash: md5
-      md5: 7b276b8ce6e49012b4fb62c0ccb00b8b
-      size: 3604
+      md5: 7bd16ee454a4561fd726ae512871d029
+      size: 3652
     params:
       params.yaml:
         experiments.sys_id_fopdt_real_delay:
@@ -377,8 +401,8 @@ stages:
             kwargs:
               u_base: 5.0
           optimizers:
-            lpfgopt_minimize:
-              name: lpfgopt_minimize
+            lpfgopt_minimize_rand_init:
+              name: lpfgopt_minimize_rand_init
               args:
                 bounds:
                 - - -86.00479336990831
@@ -392,44 +416,34 @@ stages:
                 - - 474.7938764
                   - 584.0590823999999
               kwargs:
-                discrete:
-                - 2
+                init_range:
+                - - -12.0
+                  - -8.0
+                - - 150.0
+                  - 200.0
+                - - 150.0
+                  - 250.0
+                - - 470.0
+                  - 500.0
+                - - 470.0
+                  - 490.0
                 points: 50
                 tol: 0.01
                 maxit: 1000
               n_trials: 100
-            skopt_gp_minimize:
-              name: skopt_gp_minimize
-              args:
-                dimensions:
-                - - -86.00479336990831
-                  - 86.00479336990831
-                - - 15.08
-                  - 4406.4
-                - - 0.0
-                  - 1327.04
-                - - 390.7399912087402
-                  - 609.27040320874
-                - - 474.7938764
-                  - 584.0590823999999
-              kwargs:
-                n_calls: 250
-                noise: 0.0
-                n_initial_points: 10
-              n_trials: 10
     outs:
     - path: results/sys_id_fopdt_real_delay/plots
       hash: md5
-      md5: e3ef59f3dab1f668d73e97d3f757069f.dir
-      size: 74463
-      nfiles: 4
+      md5: 40d53c923f7ddb9e85cbaac6b9524ebb.dir
+      size: 41767
+      nfiles: 2
   toy_1d_run:
     cmd: python -m stages.run_optimizers toy_1d
     deps:
     - path: stages/run_optimizers.py
       hash: md5
-      md5: 428298883a00df4dc435d3c3b1ad8cc9
-      size: 4600
+      md5: 178971eed99a98d986ac948280a2b6dc
+      size: 6898
     params:
       params.yaml:
         experiments.toy_1d:
@@ -485,8 +499,11 @@ stages:
               name: skopt_gp_minimize
               args:
                 dimensions:
-                - - -5.0
-                  - 5.0
+                - type: real
+                  name: x
+                  low: -5.0
+                  high: 5.0
+                  prior: uniform
               kwargs:
                 n_calls: 50
                 noise: 0.0
@@ -495,8 +512,8 @@ stages:
     outs:
     - path: results/toy_1d/results
       hash: md5
-      md5: e27a5e2504efe20e5c3cf2dab52367b8.dir
-      size: 1133265
+      md5: f004093b9a742412cba9c139a60372fc.dir
+      size: 1129847
       nfiles: 312
   toy_1d_plot:
     cmd: python -m stages.make_plots toy_1d

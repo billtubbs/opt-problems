@@ -9,6 +9,7 @@ import skopt
 import yaml
 import lpfgopt
 from tqdm import tqdm
+from skopt.space import Real, Integer, Categorical
 
 from problems.optprob.problems import solve_problem_with_optimizer
 from problems.toy_1d import toy_1d_problem
@@ -45,6 +46,75 @@ def num_digits(n):
     return len(str(abs(n)))
 
 
+def create_dimension_from_dict(dim_config):
+    """
+    Create a scikit-optimize Dimension object from a dictionary configuration.
+    
+    Args:
+        dim_config: Dictionary with dimension configuration
+        
+    Returns:
+        Dimension object (Real, Integer, or Categorical)
+    """
+    dim_type = dim_config.get('type', '').lower()
+    name = dim_config.get('name')
+    
+    if dim_type == 'real':
+        return Real(
+            low=dim_config['low'],
+            high=dim_config['high'],
+            prior=dim_config.get('prior', 'uniform'),
+            transform=dim_config.get('transform', 'identity'),
+            name=name
+        )
+    
+    elif dim_type == 'integer':
+        return Integer(
+            low=dim_config['low'],
+            high=dim_config['high'],
+            prior=dim_config.get('prior', 'uniform'),
+            transform=dim_config.get('transform', 'identity'),
+            name=name
+        )
+    
+    elif dim_type == 'categorical':
+        return Categorical(
+            categories=dim_config['categories'],
+            prior=dim_config.get('prior'),
+            transform=dim_config.get('transform', 'onehot'),
+            name=name
+        )
+    
+    else:
+        raise ValueError(f"Unsupported dimension type: {dim_type}")
+
+
+def load_dimensions_from_dict(config):
+    """
+    Load scikit-optimize dimensions from a dictionary.
+    
+    Args:
+        config: Dictionary containing dimension configurations
+        
+    Returns:
+        List of Dimension objects
+    """
+    dimensions = []
+    
+    # Handle both 'dimensions' key and direct list format
+    if 'dimensions' in config:
+        dim_configs = config['dimensions']
+    elif isinstance(config, list):
+        dim_configs = config
+    else:
+        raise ValueError("Config must contain 'dimensions' key or be a list")
+    
+    for dim_config in dim_configs:
+        dimensions.append(create_dimension_from_dict(dim_config))
+    
+    return dimensions
+
+
 def run_optimizers(exp_name, exp_params):
     """Run optimizer on problem n_trials times and save results to file.
     """
@@ -71,8 +141,16 @@ def run_optimizers(exp_name, exp_params):
         # Call optimizer function
         opt_class_name = opt_params.get('name', opt_name)
         optimizer = optimizers[opt_class_name]
-        args = list(opt_params.get('args', {}).values())
+        args = opt_params.get('args', {})
+        if "dimensions" in args:
+            args["dimensions"] = \
+                load_dimensions_from_dict(args["dimensions"])
+        args = list(args.values())
+
         kwargs = opt_params.get('kwargs', {})
+        if "dimensions" in kwargs:
+            kwargs["dimensions"] = \
+                load_dimensions_from_dict(kwargs["dimensions"])
 
         n_trials = opt_params.get('n_trials', 1)
 
