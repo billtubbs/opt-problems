@@ -424,12 +424,12 @@ stages:
       size: 74463
       nfiles: 4
   toy_1d_run:
-    cmd: python -m stages.run_optimizer toy_1d
+    cmd: python -m stages.run_optimizers toy_1d
     deps:
-    - path: stages/run_optimizer.py
+    - path: stages/run_optimizers.py
       hash: md5
-      md5: 871ca5963429b711d65e201d8c85bc98
-      size: 4245
+      md5: 428298883a00df4dc435d3c3b1ad8cc9
+      size: 4600
     params:
       params.yaml:
         experiments.toy_1d:
@@ -441,12 +441,45 @@ stages:
               args:
                 x0:
                 - 2.0
+              kwargs:
+                bounds:
+                - - -5.0
+                  - 5.0
+                options:
+                  maxiter: 100
+            scipy_minimize_rand_init:
+              name: scipy_minimize_rand_init
+              args:
+                init_range:
+                - - -2.0
+                  - 2.0
+              kwargs:
+                bounds:
+                - - -5.0
+                  - 5.0
+                options:
+                  maxiter: 100
+              n_trials: 100
             lpfgopt_minimize:
               name: lpfgopt_minimize
               args:
                 bounds:
                 - - -5.0
                   - 5.0
+              kwargs:
+                maxit: 100
+              n_trials: 100
+            lpfgopt_minimize_rand_init:
+              name: lpfgopt_minimize_rand_init
+              args:
+                bounds:
+                - - -5.0
+                  - 5.0
+              kwargs:
+                init_range:
+                - - -2.0
+                  - 2.0
+                maxit: 100
               n_trials: 100
             skopt_gp_minimize:
               name: skopt_gp_minimize
@@ -462,37 +495,86 @@ stages:
     outs:
     - path: results/toy_1d/results
       hash: md5
-      md5: 327714170b78cf6c316d398a0e7d1ac9.dir
-      size: 1288685
-      nfiles: 112
+      md5: e27a5e2504efe20e5c3cf2dab52367b8.dir
+      size: 1133265
+      nfiles: 312
   toy_1d_plot:
     cmd: python -m stages.make_plots toy_1d
     deps:
     - path: results/toy_1d/results
       hash: md5
-      md5: 50157cf9522e7ea12dca1bfbaef64fd4.dir
-      size: 1268901
-      nfiles: 101
+      md5: e27a5e2504efe20e5c3cf2dab52367b8.dir
+      size: 1133265
+      nfiles: 312
     - path: stages/make_plots.py
       hash: md5
-      md5: 60f2760c510c1ec5c54b0adc53d07621
-      size: 3551
+      md5: 7bd16ee454a4561fd726ae512871d029
+      size: 3652
     params:
       params.yaml:
         experiments.toy_1d:
           problem:
             name: Toy1DProblem
           optimizers:
+            scipy_optimize_minimize:
+              name: scipy_optimize_minimize
+              args:
+                x0:
+                - 2.0
+              kwargs:
+                bounds:
+                - - -5.0
+                  - 5.0
+                options:
+                  maxiter: 100
+            scipy_minimize_rand_init:
+              name: scipy_minimize_rand_init
+              args:
+                init_range:
+                - - -2.0
+                  - 2.0
+              kwargs:
+                bounds:
+                - - -5.0
+                  - 5.0
+                options:
+                  maxiter: 100
+              n_trials: 100
             lpfgopt_minimize:
               name: lpfgopt_minimize
               args:
                 bounds:
                 - - -5.0
                   - 5.0
+              kwargs:
+                maxit: 100
               n_trials: 100
+            lpfgopt_minimize_rand_init:
+              name: lpfgopt_minimize_rand_init
+              args:
+                bounds:
+                - - -5.0
+                  - 5.0
+              kwargs:
+                init_range:
+                - - -2.0
+                  - 2.0
+                maxit: 100
+              n_trials: 100
+            skopt_gp_minimize:
+              name: skopt_gp_minimize
+              args:
+                dimensions:
+                - - -5.0
+                  - 5.0
+              kwargs:
+                n_calls: 50
+                noise: 0.0
+                n_initial_points: 10
+              n_trials: 10
     outs:
     - path: results/toy_1d/plots
       hash: md5
-      md5: 24f353c4f062901a43777c41ded91894.dir
-      size: 34419
-      nfiles: 2
+      md5: 173bf35798503eaa0ffbe8c152f9c61d.dir
+      size: 157392
+      nfiles: 10

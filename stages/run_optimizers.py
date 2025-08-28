@@ -9,9 +9,14 @@ import skopt
 import yaml
 import lpfgopt
 from tqdm import tqdm
+
 from problems.optprob.problems import solve_problem_with_optimizer
 from problems.toy_1d import toy_1d_problem
 from problems.sys_id_fopdt import sys_id_fopdt
+from optimizers.optimizers import (
+    scipy_minimize_rand_init,
+    lpfgopt_minimize_rand_init
+)
 
 
 RESULTS_DIR = 'results'
@@ -22,13 +27,15 @@ problems = {
     "Toy1DProblem": toy_1d_problem.Toy1DProblem,
     "SysIdFromFileFOPDT": sys_id_fopdt.SysIdFromFileFOPDT,
     "SysIdFromFileFOPDTRealDelay": sys_id_fopdt.SysIdFromFileFOPDTRealDelay,
-}
+    }
 
 # Register all optimizer classes
 optimizers = {
     "scipy_optimize_minimize": scipy.optimize.minimize,
     "lpfgopt_minimize": lpfgopt.minimize,
     "skopt_gp_minimize": skopt.gp_minimize,
+    "scipy_minimize_rand_init": scipy_minimize_rand_init,
+    "lpfgopt_minimize_rand_init": lpfgopt_minimize_rand_init,
 }
 
 
@@ -38,13 +45,13 @@ def num_digits(n):
     return len(str(abs(n)))
 
 
-def run_optimizer(exp_name, exp_params):
+def run_optimizers(exp_name, exp_params):
     """Run optimizer on problem n_trials times and save results to file.
     """
 
     # Instantiate optimization problem class
     problem_name = exp_params['problem']['name']
-    args = exp_params['problem'].get('args', {}).values()
+    args = list(exp_params['problem'].get('args', {}).values())
     kwargs = exp_params['problem'].get('kwargs', {})
     problem = problems[problem_name](*args, **kwargs)
 
@@ -55,6 +62,7 @@ def run_optimizer(exp_name, exp_params):
     for opt_name, opt_params in pbar_outer:
         pbar_outer.set_description(opt_name)
 
+        # Prepare directory to save results
         os.makedirs(
             os.path.join(RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, opt_name),
             exist_ok=True
@@ -63,7 +71,7 @@ def run_optimizer(exp_name, exp_params):
         # Call optimizer function
         opt_class_name = opt_params.get('name', opt_name)
         optimizer = optimizers[opt_class_name]
-        args = opt_params.get('args', {}).values()
+        args = list(opt_params.get('args', {}).values())
         kwargs = opt_params.get('kwargs', {})
 
         n_trials = opt_params.get('n_trials', 1)
@@ -137,4 +145,4 @@ if __name__ == "__main__":
         params = yaml.safe_load(f.read())
     exp_params = params['experiments'][exp_name]
 
-    run_optimizer(exp_name, exp_params)
+    run_optimizers(exp_name, exp_params)

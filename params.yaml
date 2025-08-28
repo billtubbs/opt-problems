@@ -7,7 +7,29 @@ experiments:
         name: scipy_optimize_minimize
         args:
           x0:
-            - 2.0
+            - 2.0  # close to solution
+        kwargs:
+          bounds:
+            -
+              - -5.0
+              - 5.0
+          options:
+            maxiter: 100
+      scipy_minimize_rand_init:
+        name: scipy_minimize_rand_init
+        args:
+          init_range:
+            -
+              - -2.0
+              - 2.0
+        kwargs:
+          bounds:
+            -
+              - -5.0
+              - 5.0
+          options:
+            maxiter: 100
+        n_trials: 100
       lpfgopt_minimize:
         name: lpfgopt_minimize
         args:
@@ -15,6 +37,22 @@ experiments:
             -
               - -5.0
               - 5.0
+        kwargs:
+          maxit: 100
+        n_trials: 100
+      lpfgopt_minimize_rand_init:
+        name: lpfgopt_minimize_rand_init
+        args:
+          bounds:
+            -
+              - -5.0
+              - 5.0
+        kwargs:
+          init_range:
+            -
+              - -2.0
+              - 2.0
+          maxit: 100
         n_trials: 100
       skopt_gp_minimize:
         name: skopt_gp_minimize

@@ -1,9 +1,9 @@
 stages:
   # Toy 1D experiment
   toy_1d_run:
-    cmd: python -m stages.run_optimizer toy_1d
+    cmd: python -m stages.run_optimizers toy_1d
     deps:
-      - stages/run_optimizer.py
+      - stages/run_optimizers.py
     params:
       - experiments.toy_1d
     outs:
@@ -21,9 +21,9 @@ stages:
 
   # System Identification FOPDT experiment (with integer delay)
   sys_id_fopdt_run:
-    cmd: python -m stages.run_optimizer sys_id_fopdt
+    cmd: python -m stages.run_optimizers sys_id_fopdt
     deps:
-      - stages/run_optimizer.py
+      - stages/run_optimizers.py
     params:
       - experiments.sys_id_fopdt
     outs:
@@ -41,9 +41,9 @@ stages:
 
   # System Identification FOPDT experiment with real delay  
   sys_id_fopdt_real_delay_run:
-    cmd: python -m stages.run_optimizer sys_id_fopdt_real_delay
+    cmd: python -m stages.run_optimizers sys_id_fopdt_real_delay
     deps:
-      - stages/run_optimizer.py
+      - stages/run_optimizers.py
     params:
       - experiments.sys_id_fopdt_real_delay
     outs:

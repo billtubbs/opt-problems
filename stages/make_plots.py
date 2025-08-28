@@ -51,6 +51,7 @@ def make_plots(exp_name, exp_params):
 
     for opt_name in tqdm(exp_params['optimizers']):
 
+        # Prepare directory to save plot images
         os.makedirs(
             os.path.join(RESULTS_DIR, exp_name, STAGE_RESULTS_DIR, opt_name),
             exist_ok=True

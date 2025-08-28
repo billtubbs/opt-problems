@@ -16,14 +16,16 @@ dependencies = [
     "numba",
     "pyyaml",
     "tqdm",
+    "scikit-learn",
     "scikit-optimize",
     "lpfgopt",
-    "xlwings"
+    "xlwings",
+    "dvc"
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["problems*"]
+include = ["problems*", "optimizers*"]
 
 [project.scripts]
 problems = "problems.__main__:main"
