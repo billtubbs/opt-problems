@@ -26,7 +26,15 @@ def function_evaluations_plot(
 
 
 def best_guesses_plot(
-    problem, title=None, marker='', linestyle='-', **kwargs
+    problem,
+    marker='',
+    linestyle='-',
+    x_label='Number of function evaluations',
+    y_label='f(x) best guess',
+    title=None,
+    ax=None,
+    figsize=(7, 2.5),
+    **kwargs
 ):
     if title is None:
         title = f'Best Guesses - {problem.name}'
@@ -34,8 +42,12 @@ def best_guesses_plot(
         accumulate([f for f, x in problem.guesses], min),
         dtype='float'
     )
-    fig = plt.figure(figsize=(7, 2.5))
-    ax = fig.gca()
+
+    # Create the plot
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize)
+    else:
+        ax = plt.gca()
     plt.semilogy(
         best_guesses,
         marker=marker,
@@ -43,8 +55,8 @@ def best_guesses_plot(
         drawstyle='steps-post',
         **kwargs
     )
-    plt.xlabel('Number of function evaluations')
-    plt.ylabel('f(x) best guess')
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
     plt.grid()
     plt.title(title)
     return ax
@@ -55,7 +67,14 @@ def best_guesses_plot_n_repeats(
     color='tab:blue',
     alpha=0.25,
     best_guesses=True,
-    title=None
+    x_label='Number of function evaluations',
+    y_label='f(x) best guess',
+    label='Median',
+    area_label='Min-Max Range',
+    title=None,
+    ax=None,
+    figsize=(7, 2.5),
+    **kwargs
 ):
 
     n_repeats = len(fun_evals)
@@ -85,11 +104,23 @@ def best_guesses_plot_n_repeats(
     median_vals = np.median(series_array, axis=0)
 
     # Create the plot
-    fig = plt.figure(figsize=(7, 2.5))
-    ax = fig.gca()
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize)
+    else:
+        ax = plt.gca()
+
+    # Fill between min and max
+    x = np.arange(max_len)
+    ax.fill_between(
+        x,
+        min_vals,
+        max_vals,
+        alpha=alpha,
+        color=color,
+        label=area_label
+    )
 
     # Plot the median line
-    x = np.arange(max_len)
     ax.semilogy(
         x,
         median_vals,
@@ -97,25 +128,14 @@ def best_guesses_plot_n_repeats(
         linestyle='-',
         color=color,
         drawstyle='steps-post',
-        label='Median',
+        label=label,
+        **kwargs
     )
 
-    # Fill between min and max
-    ax.fill_between(
-        x,
-        min_vals,
-        max_vals,
-        alpha=alpha,
-        color=color,
-        label='Min-Max Range'
-    )
-
-    plt.xlabel('Number of function evaluations')
-    plt.ylabel('f(x)')
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
     plt.grid()
     plt.title(title)
     plt.legend()
-    
+
     return ax
-
-

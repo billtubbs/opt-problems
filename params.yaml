@@ -86,7 +86,7 @@ experiments:
             - 390.7399912087402
             - 609.27040320874
           -
-            - 474.7938764
+            - 470
             - 584.0590823999999
         dt: 15.08
         io_data_path: problems/sys_id_fopdt/data/io_data_fopdt.csv
@@ -112,13 +112,13 @@ experiments:
               - 390.7399912087402
               - 609.27040320874
             -
-              - 474.7938764
+              - 470
               - 584.0590823999999
         kwargs:
           discrete:
             - 2
           points: 50
-          tol: 0.01
+          tol: 0.001
           maxit: 1000
         n_trials: 100
       skopt_gp_minimize:
@@ -136,7 +136,7 @@ experiments:
               high: 4406.4
               prior: uniform
             - type: integer
-              name: theta
+              name: n_delays
               low: 0
               high: 88
               prior: uniform
@@ -147,7 +147,7 @@ experiments:
               prior: uniform
             - type: real
               name: y_init
-              low: 474.7938764
+              low: 470
               high: 584.0590823999999
               prior: uniform
         kwargs:
@@ -173,7 +173,7 @@ experiments:
             - 390.7399912087402
             - 609.27040320874
           -
-            - 474.7938764
+            - 470
             - 584.0590823999999
         dt: 15.08
         io_data_path: problems/sys_id_fopdt/data/io_data_fopdt.csv
@@ -199,7 +199,7 @@ experiments:
               - 390.7399912087402
               - 609.27040320874
             -
-              - 474.7938764
+              - 470
               - 584.0590823999999
         kwargs:
           init_range:
@@ -219,40 +219,146 @@ experiments:
               - 470.0
               - 490.0
           points: 50
-          tol: 0.01
+          tol: 0.001
           maxit: 1000
         n_trials: 100
-      skopt_gp_minimize:
-        name: skopt_gp_minimize
+      scipy_minimize_BFGS:
+        name: scipy_minimize_rand_init
         args:
-          dimensions:
-            - type: real
-              name: K
-              low: -86.00479336990831
-              high: 86.00479336990831
-              prior: uniform
-            - type: real
-              name: tau
-              low: 15.08
-              high: 4406.4
-              prior: uniform
-            - type: real
-              name: theta
-              low: 0.0
-              high: 1327.04
-              prior: uniform
-            - type: real
-              name: y_base
-              low: 390.7399912087402
-              high: 609.27040320874
-              prior: uniform
-            - type: real
-              name: y_init
-              low: 474.7938764
-              high: 584.0590823999999
-              prior: uniform
+          init_range:
+            -
+              - -12.0
+              - -8.0
+            -
+              - 150.0
+              - 200.0
+            -
+              - 150.0
+              - 250.0
+            -
+              - 470.0
+              - 500.0
+            -
+              - 470.0
+              - 490.0
         kwargs:
-          n_calls: 250
-          noise: 0.0
-          n_initial_points: 10
-        n_trials: 10
+          tol: 0.0001
+          method: BFGS
+          options:
+            maxiter: 5000
+        n_trials: 100
+      scipy_minimize_NelderMead:
+        name: scipy_minimize_rand_init
+        args:
+          init_range:
+            -
+              - -12.0
+              - -8.0
+            -
+              - 150.0
+              - 200.0
+            -
+              - 150.0
+              - 250.0
+            -
+              - 470.0
+              - 500.0
+            -
+              - 470.0
+              - 490.0
+        kwargs:
+          method: Nelder-Mead
+          bounds:
+            -
+              - -86.00479336990831
+              - 86.00479336990831
+            -
+              - 15.08
+              - 4406.4
+            -
+              - 0.0
+              - 1327.04
+            -
+              - 390.7399912087402
+              - 609.27040320874
+            -
+              - 470
+              - 584.0590823999999
+          tol: 0.001
+          maxfev: 1000
+        n_trials: 100
+      scipy_minimize_Powell:
+        name: scipy_minimize_rand_init
+        args:
+          init_range:
+            -
+              - -12.0
+              - -8.0
+            -
+              - 150.0
+              - 200.0
+            -
+              - 150.0
+              - 250.0
+            -
+              - 470.0
+              - 500.0
+            -
+              - 470.0
+              - 490.0
+        kwargs:
+          method: Powell
+          bounds:
+            -
+              - -86.00479336990831
+              - 86.00479336990831
+            -
+              - 15.08
+              - 4406.4
+            -
+              - 0.0
+              - 1327.04
+            -
+              - 390.7399912087402
+              - 609.27040320874
+            -
+              - 470
+              - 584.0590823999999
+          tol: 0.001
+          options:
+            maxiter: 500
+        n_trials: 100
+      # skopt_gp_minimize:
+      #   name: skopt_gp_minimize
+      #   args:
+      #     dimensions:
+      #       - type: real
+      #         name: K
+      #         low: -86.00479336990831
+      #         high: 86.00479336990831
+      #         prior: uniform
+      #       - type: real
+      #         name: tau
+      #         low: 15.08
+      #         high: 4406.4
+      #         prior: uniform
+      #       - type: real
+      #         name: theta
+      #         low: 0.0
+      #         high: 1327.04
+      #         prior: uniform
+      #       - type: real
+      #         name: y_base
+      #         low: 390.7399912087402
+      #         high: 609.27040320874
+      #         prior: uniform
+      #       - type: real
+      #         name: y_init
+      #         low: 470
+      #         high: 584.0590823999999
+      #         prior: uniform
+      #   kwargs:
+      #     n_calls: 250
+      #     noise: 0.0
+      #     n_initial_points: 10
+      #   n_trials: 10
