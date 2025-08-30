@@ -129,7 +129,8 @@ def evaluate_excel_sheet(
 def test_on_Toy1DProblem():
 
     # Path to your Excel file
-    excel_sheets_dir = "excel_sheets"
+    problems_dir = "problems"
+    problem_name = "toy_1d"
     filename = "Toy-1D-Problem.xlsx"
     cell_refs = {
         'name': ('B2', 'C2'),
@@ -139,7 +140,7 @@ def test_on_Toy1DProblem():
         'x_ub': ('B6', 'C6')
     }
 
-    file_path = os.path.join(os.getcwd(), excel_sheets_dir, filename)
+    file_path = os.path.join(os.getcwd(), problems_dir, problem_name, filename)
 
     # Check if file exists
     if not os.path.exists(file_path):
@@ -185,7 +186,8 @@ def test_on_Toy1DProblem():
 def test_on_Toy2DProblemConstraint():
 
     # Path to Excel file
-    excel_sheets_dir = "excel_sheets"
+    problems_dir = "problems"
+    problem_name = "toy_2d_const"
     filename = "Toy-2D-Problem-Constraint.xlsx"
     cell_refs = {
         'name': ('B2', 'C2'),
@@ -196,7 +198,7 @@ def test_on_Toy2DProblemConstraint():
         'x_ub': ('B7', ['C7', 'D7'])
     }
 
-    file_path = os.path.join(os.getcwd(), excel_sheets_dir, filename)
+    file_path = os.path.join(os.getcwd(), problems_dir, problem_name, filename)
 
     # Check if file exists
     if not os.path.exists(file_path):
