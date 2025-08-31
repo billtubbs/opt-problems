@@ -12,9 +12,8 @@ class ConstrainedScalarOptimizationProblem():
     _bounds: np.ndarray
     _global_minimum: np.ndarray
 
-    def __init__(self, bounds, name=None, global_minimum=None):
+    def __init__(self, bounds=None, name=None, global_minimum=None):
         self._bounds = bounds
-        self._input_dim = len(bounds)
         self._name = name
         self._global_minimum = global_minimum
         self.reset()
@@ -27,12 +26,12 @@ class ConstrainedScalarOptimizationProblem():
         return self._name
 
     @property
-    def input_dim(self) -> tuple:
-        return self._input_dim
-
-    @property
     def bounds(self) -> np.ndarray:
         return self._bounds
+
+    @bounds.setter
+    def bounds(self, value: np.ndarray) -> None:
+        self._bounds = value
 
     @property
     def global_minimum(self) -> np.ndarray:
@@ -51,11 +50,12 @@ class ConstrainedScalarOptimizationProblem():
         i_best = np.argmin([item[0] for item in self._guesses])
         return self._guesses[i_best]
 
-    @staticmethod
-    def cost_function_to_minimize(x, *args) -> float:
+    def cost_function_to_minimize(self, x, *args) -> float:
         # Implement cost function to minimize here
         cost = 0.0
         return cost
+    
+    # TODO: Implement constaint function
 
     def __call__(self, x, *args) -> float:
         assert np.all(

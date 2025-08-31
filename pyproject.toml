@@ -20,12 +20,13 @@ dependencies = [
     "scikit-optimize",
     "lpfgopt",
     "xlwings",
+    "pytest",
     "dvc"
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["problems*", "optimizers*"]
+include = ["problems*", "optimizers*", "excel_tools*"]
 
 [project.scripts]
 problems = "problems.__main__:main"

@@ -1,12 +1,95 @@
+"""Functions for writing values to and reading from Excel spreadsheets on
+Mac OS operating systems.
+"""
 
-import os
-import time
-import xlwings as xw
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
-from itertools import product
-from collections import defaultdict
+
+def validate_name_value(ws, name, cell_ref):
+    """Validate variable name in cell in Excel sheet"""
+    try:
+        name_cell_value = ws.range(cell_ref).value
+    except Exception as e:
+        raise ValueError(f"Failed to read name cell {cell_ref}: {e}")
+    if name_cell_value != name:
+        raise ValueError(
+            f"Variable name mismatch for '{name}': "
+            f"expected '{name}', got '{name_cell_value}' in cell {cell_ref}"
+        )
+
+
+def get_var_value(ws, name, cell_ref):
+    """Retrieve a value from a cell or group of cells in the Excel
+    sheet that matches the name and cell reference given.
+
+    Args:
+        ws (xlwings.main.Sheet): Excel worksheet.
+        name (str): The name of the variable. This will be used to compare to
+            the name in the Excel sheet.
+        cell_ref: Tuple containing a reference to a cell containing the
+            variable name and a cell reference or list of cell references
+            containing the value(s). E.g. ("B2", "C3") for one value, or ("B2",
+            ["C3", "D3", "E3]) for a vector of three values.
+
+    Returns:
+        value: Either the value from the specified cell or a list of values
+            if more than one is specified.
+    """
+
+    name_cell_ref, value_cell_refs = cell_ref
+
+    # Check variable name matches variable label in sheet
+    validate_name_value(ws, name, name_cell_ref)
+
+    # Get value(s)
+    if isinstance(value_cell_refs, (str, tuple)):
+        # Single cell reference, "A1" or (row, col) style,
+        # or a range like "C4:D4".
+        value = ws.range(value_cell_refs).value
+    elif isinstance(value_cell_refs, list):
+        # Multiple cells - return as list
+        value = [ws.range(cell_ref).value for cell_ref in value_cell_refs]
+    else:
+        raise TypeError(
+            "Cell reference must be str, tuple or a list of these types."
+        )
+
+    return value
+
+
+def set_var_value(ws, name, cell_ref, values):
+    """Retrieve a value from a cell or group of cells in the Excel
+    sheet that matches the name and cell reference given.
+
+    Args:
+        ws (xlwings.main.Sheet): Excel worksheet.
+        name (str): The name of the variable. This will be used to compare to
+            the name in the Excel sheet.
+        cell_ref: Tuple containing a reference to a cell containing the
+            variable name and a cell reference or list of cell references
+            containing the value(s). E.g. ("B2", "C3") for one value, or ("B2",
+            ["C3", "D3", "E3]) for a vector of three values.
+        values: (str, int, float or list of these types)
+
+    Returns:
+        value: Either the value from the specified cell or a list of values
+            if more than one is specified.
+    """
+    name_cell_ref, value_cell_refs = cell_ref
+
+    # Check variable name matches variable label in sheet
+    validate_name_value(ws, name, name_cell_ref)
+
+    # Set value(s)
+    if isinstance(value_cell_refs, (str, tuple)):
+        # Single cell reference, "A1" or (row, col) style,
+        # or a range like "C4:D4".
+        ws.range(value_cell_refs).value = values
+    elif isinstance(value_cell_refs, list):
+        for cell_ref, value in zip(value_cell_refs, values):
+            ws.range(cell_ref).value = value
+    else:
+        raise TypeError(
+            "Cell reference must be str, tuple or a list of these types."
+        )
 
 
 def evaluate_excel_sheet(
@@ -57,6 +140,18 @@ def evaluate_excel_sheet(
         'x_ub': ('B7', ['C7', 'D7'])
     }
 
+    or alternatively, 'R1C1' style referencing is supported using 
+    tuples like this:
+
+    cell_refs = {
+        'name': ((2, 2), (2, 3)),
+        'f(x)': ((3, 2), (3, 3)),
+        'x': ((4, 2), (4, 3)),
+        'g(x)': ((5, 2), (5, 3)),
+        'x_lb': ((6, 2), (6, 3)),
+        'x_ub': ((7, 2), (7, 3))
+    }
+
     Notes:
 
     The reason the name fields are included is that the algorithm
@@ -73,30 +168,10 @@ def evaluate_excel_sheet(
 
     # Copy input variable values to specified cells
     for (var_name, values) in inputs.items():
-        name_cell, value_cells = cell_refs[var_name]
-        
-        # Check variable name matches
-        name_cell_value = ws.range(name_cell).value
-        msg = (
-            f"variable name mismatch: expected {var_name}, "
-            f"got {name_cell_value}"
-        )
-        assert name_cell_value == var_name, msg
-
-        # Set values
-        try:
-            len(values)
-        except TypeError:
-            # Single value
-            ws.range(value_cells).value = values
-        else:
-            # Multiple values (list/array)
-            if isinstance(value_cells, list):
-                for cell_ref, value in zip(value_cells, values):
-                    ws.range(cell_ref).value = value
-            else:
-                # If value_cells is a range like "C4:D4"
-                ws.range(value_cells).value = values
+        cell_ref = cell_refs[var_name]
+        if cell_ref is None:
+            raise ValueError(f"No cell ref for {var_name!r}")
+        set_var_value(ws, var_name, cell_ref, values)
 
     # Force Excel to recalculate all formulas
     wb.app.calculate()
@@ -107,144 +182,9 @@ def evaluate_excel_sheet(
 
     outputs = {}
     for var_name in output_vars:
-        name_cell, value_cells = cell_refs[var_name]
-
-        # Verify variable name
-        name_cell_value = ws.range(name_cell).value
-        assert name_cell_value == var_name, f"variable name mismatch: expected {var_name}, got {name_cell_value}"
-
-        # Get values
-        if isinstance(value_cells, str):
-            # Single cell
-            value = ws.range(value_cells).value
-        else:
-            # Multiple cells - return as list
-            value = [ws.range(cell_ref).value for cell_ref in value_cells]
-
-        outputs[var_name] = value
+        cell_ref = cell_refs[var_name]
+        if cell_ref is None:
+            raise ValueError(f"No cell ref for {var_name!r}")
+        outputs[var_name] = get_var_value(ws, var_name, cell_ref)
 
     return outputs
-
-
-def test_on_Toy1DProblem():
-
-    # Path to your Excel file
-    problems_dir = "problems"
-    problem_name = "toy_1d"
-    filename = "Toy-1D-Problem.xlsx"
-    cell_refs = {
-        'name': ('B2', 'C2'),
-        'f(x)': ('B3', 'C3'),
-        'x': ('B4', 'C4'),
-        'x_lb': ('B5', 'C5'),
-        'x_ub': ('B6', 'C6')
-    }
-
-    file_path = os.path.join(os.getcwd(), problems_dir, problem_name, filename)
-
-    # Check if file exists
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Excel file not found: {file_path}")
-
-    # Open the workbook with xlwings
-    wb = xw.Book(file_path)
-
-    try:
-        # Check the problem parameters
-        inputs = {'x': 0.0}
-        outputs = evaluate_excel_sheet(
-            wb, inputs, cell_refs, output_vars=['name', 'x_lb', 'x_ub']
-        )
-        print("Test: ", outputs['name'])
-        assert outputs['name'] == 'Toy1DProblem'
-        assert outputs['x_lb'] == -5
-        assert outputs['x_ub'] == 5
-
-        x_values = np.linspace(-5, 5, 11)
-        f_eval = []
-        t0 = time.time()
-        timings = []
-        print("Evaluating excel sheet...")
-        for i, x in tqdm(enumerate(x_values)):
-            inputs = {'x': x}
-            outputs = evaluate_excel_sheet(wb, inputs, cell_refs)
-            f_eval.append(outputs['f(x)'])
-            timings.append(time.time() - t0)
-
-        # Print results and timings
-        results_summary = pd.DataFrame(
-            {'Time (seconds)': timings, 'x': x_values, 'f(x)': f_eval}
-        )
-        print(results_summary)
-
-    finally:
-        # Save and close
-        wb.save()
-        wb.close()
-
-
-def test_on_Toy2DProblemConstraint():
-
-    # Path to Excel file
-    problems_dir = "problems"
-    problem_name = "toy_2d_const"
-    filename = "Toy-2D-Problem-Constraint.xlsx"
-    cell_refs = {
-        'name': ('B2', 'C2'),
-        'f(x)': ('B3', 'C3'),
-        'x': ('B4', ['C4', 'D4']),
-        'g(x)': ('B5', 'C5'),
-        'x_lb': ('B6', ['C6', 'D6']),
-        'x_ub': ('B7', ['C7', 'D7'])
-    }
-
-    file_path = os.path.join(os.getcwd(), problems_dir, problem_name, filename)
-
-    # Check if file exists
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Excel file not found: {file_path}")
-
-    # Open the workbook with xlwings
-    wb = xw.Book(file_path)
-
-    try:
-        # Check the problem parameters
-        inputs = {'x': [0.0, 0.0]}
-        outputs = evaluate_excel_sheet(
-            wb, inputs, cell_refs, output_vars=['name', 'x_lb', 'x_ub']
-        )
-        print("Test: ", outputs['name'])
-        assert outputs['name'] == 'Toy2DProblemConstraint'
-        assert outputs['x_lb'] == [-5, -5]
-        assert outputs['x_ub'] == [5, 5]
-
-        x1_values = np.linspace(-5, 5, 11)
-        x2_values = np.linspace(-5, 5, 11)
-        n_iters = x1_values.shape[0] * x2_values.shape[0]
-        results = defaultdict(list)
-        t0 = time.time()
-        print("Evaluating excel sheet...")
-        for x1, x2 in tqdm(product(x1_values, x2_values), total=n_iters):
-            inputs = {'x': [x1, x2]}
-            outputs = evaluate_excel_sheet(
-                wb, inputs, cell_refs, output_vars=['f(x)', 'g(x)']
-            )
-            results['x1'].append(x1)
-            results['x2'].append(x2)
-            results['f_eval'].append(outputs['f(x)'])
-            results['g_eval'].append(outputs['g(x)'])
-            results['timings'].append(time.time() - t0)
-
-        # Print results and timings
-        results_summary = pd.DataFrame(results)
-        print(results_summary)
-
-    finally:
-        # Save and close
-        wb.save()
-        wb.close()
-
-
-if __name__ == "__main__":
-    test_on_Toy1DProblem()
-    test_on_Toy2DProblemConstraint()
