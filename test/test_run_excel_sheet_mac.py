@@ -193,7 +193,7 @@ def test_on_Toy2DProblemConstraint(problems_dir, test_data_dir):
     cell_refs = {
         'name': ('B2', 'C2'),
         'f(x)': ('B3', 'C3'),
-        'x': ('B4', ('C4', 'D4')),
+        'x': ('B4', ['C4', 'D4']),
         'g(x)': ('B5', 'C5'),
         'x_lb': ('B6', 'C6:D6'),  # alternative way to define range
         'x_ub': ('B7', 'C7:D7')
