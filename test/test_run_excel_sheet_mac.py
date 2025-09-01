@@ -25,10 +25,17 @@ def problems_dir():
     return "problems"
 
 
-test_problem_data = {
+TEST_PROBLEMS = {
     "toy_1d": {
         "filename": "Toy-1D-Problem.xlsx",
         "sheet": 1,
+        "expected_values": {
+            "name": "Toy1DProblem",
+            "x_lb": -5.0,
+            "x_ub": 5.0,
+            "f(x)": 0.18727730945265594,
+            "x": 2.0,
+        },
         "cell_refs": {
             "A1": {
                 'name': ('B2', 'C2'),
@@ -45,19 +52,52 @@ test_problem_data = {
                 'x_ub': ((6, 2), (6, 3))
             }
         }
+    },
+    "toy_2d_const": {
+        "filename": "Toy-2D-Problem-Constraint.xlsx",
+        "sheet": 1,
+        "expected_values": {
+            "name": "Toy2DProblemConstraint",
+            "x_lb": [-5.0, -5.0],
+            "x_ub": [5.0, 5.0],
+            "f(x)": 0.0,
+            "g(x)": 10.0,
+            "x": [0.0, 0.0]
+        },
+        "cell_refs": {
+            "A1": {
+                'name': ('B2', 'C2'),
+                'f(x)': ('B3', 'C3'),
+                'x': ('B4', ['C4', 'D4']),
+                'g(x)': ('B5', 'C5'),
+                'x_lb': ('B6', 'C6:D6'),  # alternative way to define range
+                'x_ub': ('B7', 'C7:D7')
+            },
+            "R1C1": {
+                'name': ((2, 2), (2, 3)),
+                'f(x)': ((3, 2), (3, 3)),
+                'x': ((4, 2), [(4, 3), (4, 4)]),
+                'g(x)': ((5, 2), (5, 3)),
+                'x_lb': ((6, 2), [(6, 3), (6, 4)]),
+                'x_ub': ((7, 2), [(7, 3), (7, 4)]),
+            },
+        }
     }
 }
 
 
+@pytest.mark.parametrize("problem", ["toy_1d", "toy_2d_const"])
 @pytest.mark.parametrize("ref_style", ["A1", "R1C1"])
-def test_get_var_value(problems_dir, ref_style):
+def test_set_and_get_var_value(problems_dir, problem, ref_style):
+
+    problem_data = TEST_PROBLEMS[problem]
 
     # Path to Excel file
-    problem_name = "toy_1d"
-    filename = test_problem_data[problem_name]['filename']
-    filepath = os.path.join(os.getcwd(), problems_dir, problem_name, filename)
-    sheet = test_problem_data[problem_name]['sheet']
-    cell_refs = test_problem_data[problem_name]['cell_refs'][ref_style]
+    filename = problem_data['filename']
+    filepath = os.path.join(os.getcwd(), problems_dir, problem, filename)
+    sheet = problem_data['sheet']
+    cell_refs = problem_data['cell_refs'][ref_style]
+    expected_values = problem_data['expected_values']
 
     # Check if file exists
     if not os.path.exists(filepath):
@@ -69,54 +109,56 @@ def test_get_var_value(problems_dir, ref_style):
     # Get the worksheet
     ws = wb.sheets[sheet - 1]  # xlwings uses 0-based indexing
 
-    values = {}
+    x_name = 'x'
+    x = expected_values[x_name]
+    values = {x_name: x}
+    other_var_names = list(expected_values.keys())
+    other_var_names.remove(x_name)
     try:
-        for name, cell_ref in cell_refs.items():
-            values[name] = get_var_value(ws, name, cell_ref)
+        set_var_value(ws, x_name, cell_refs[x_name], x)
+        wb.app.calculate()
+        for name in other_var_names:
+            values[name] = get_var_value(ws, name, cell_refs[name])
     finally:
         # Save and close
         wb.save()
         wb.close()
 
-    assert values['name'] == 'Toy1DProblem'
-    assert values['x_lb'] == -5.0
-    assert values['x_ub'] == 5.0
-    assert isinstance(values['f(x)'], float)
-    assert isinstance(values['x'], float)
+    assert values == expected_values
 
 
-@pytest.mark.parametrize("ref_style", ["A1", "R1C1"])
-def test_set_var_value(problems_dir, ref_style):
+# @pytest.mark.parametrize("problem", ["toy_1d", "toy_2d_const"])
+# @pytest.mark.parametrize("ref_style", ["A1", "R1C1"])
+# def test_set_var_value(problems_dir, problem, ref_style):
 
-    # Path to Excel file
-    problem_name = "toy_1d"
-    filename = test_problem_data[problem_name]['filename']
-    filepath = os.path.join(os.getcwd(), problems_dir, problem_name, filename)
-    sheet = test_problem_data[problem_name]['sheet']
-    cell_refs = test_problem_data[problem_name]['cell_refs'][ref_style]
+#     # Path to Excel file
+#     filename = TEST_PROBLEMS[problem]['filename']
+#     filepath = os.path.join(os.getcwd(), problems_dir, problem, filename)
+#     sheet = TEST_PROBLEMS[problem]['sheet']
+#     cell_refs = TEST_PROBLEMS[problem]['cell_refs'][ref_style]
 
-    # Check if file exists
-    if not os.path.exists(filepath):
-        raise FileNotFoundError(f"Excel file not found: {filepath}")
+#     # Check if file exists
+#     if not os.path.exists(filepath):
+#         raise FileNotFoundError(f"Excel file not found: {filepath}")
 
-    # Open the workbook with xlwings
-    wb = xw.Book(filepath)
+#     # Open the workbook with xlwings
+#     wb = xw.Book(filepath)
 
-    # Get the worksheet
-    ws = wb.sheets[sheet - 1]  # xlwings uses 0-based indexing
+#     # Get the worksheet
+#     ws = wb.sheets[sheet - 1]  # xlwings uses 0-based indexing
 
-    name = 'x'
-    set_value = 1.11
-    try:
-        set_var_value(ws, name, cell_refs[name], set_value)
-        get_value = get_var_value(ws, name, cell_refs[name])
-    finally:
-        # Save and close
-        wb.save()
-        wb.close()
+#     name = 'x'
+#     set_value = 1.11
+#     try:
+#         set_var_value(ws, name, cell_refs[name], set_value)
+#         get_value = get_var_value(ws, name, cell_refs[name])
+#     finally:
+#         # Save and close
+#         wb.save()
+#         wb.close()
 
-    assert isinstance(get_value, float)
-    assert get_value == set_value
+#     assert isinstance(get_value, float)
+#     assert get_value == set_value
 
 
 def test_on_Toy1DProblem(problems_dir, test_data_dir):

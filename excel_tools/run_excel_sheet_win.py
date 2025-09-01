@@ -9,6 +9,19 @@ from itertools import product
 from collections import defaultdict
 
 
+def validate_name_value(ws, name, cell_ref):
+    """Validate variable name in cell in Excel sheet"""
+    try:
+        name_cell_value = ws.Range(cell_ref).Value
+    except Exception as e:
+        raise ValueError(f"Failed to read name cell {cell_ref}: {e}")
+    if name_cell_value != name:
+        raise ValueError(
+            f"Variable name mismatch for '{name}': "
+            f"expected '{name}', got '{name_cell_value}' in cell {cell_ref}"
+        )
+
+
 def evaluate_excel_sheet(
     excel, wb, inputs, cell_refs, output_vars=None, sheet=1
 ):

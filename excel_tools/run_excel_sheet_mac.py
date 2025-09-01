@@ -45,11 +45,11 @@ def get_var_value(ws, name, cell_ref):
         # or a range like "C4:D4".
         value = ws.range(value_cell_refs).value
     elif isinstance(value_cell_refs, list):
-        # Create union range
-        union_range = ','.join(value_cell_refs)
-        value = ws.range(union_range).value
+        # Get multiple values
+        return [ws.range(cell_ref).value for cell_ref in value_cell_refs]
     else:
         raise TypeError(
+            f"Invalid cell reference type: {type(value_cell_refs)}. "
             "Cell reference must be str, tuple or a list of these types."
         )
 
@@ -85,11 +85,12 @@ def set_var_value(ws, name, cell_ref, values):
         # or a range like "C4:D4".
         ws.range(value_cell_refs).value = values
     elif isinstance(value_cell_refs, list):
-        # Create union range
-        union_range = ','.join(value_cell_refs)
-        ws.range(union_range).value = values
+        # Set multiple values
+        for cell_ref, value in zip(value_cell_refs, values):
+            ws.range(cell_ref).value = value
     else:
         raise TypeError(
+            f"Invalid cell reference type: {type(value_cell_refs)}. "
             "Cell reference must be str, tuple or a list of these types."
         )
 
