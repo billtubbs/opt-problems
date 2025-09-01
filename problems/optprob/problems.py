@@ -54,8 +54,8 @@ class ConstrainedScalarOptimizationProblem():
         # Implement cost function to minimize here
         cost = 0.0
         return cost
-    
-    # TODO: Implement constaint function
+
+    # TODO: How to implement constraint function?
 
     def __call__(self, x, *args) -> float:
         assert np.all(

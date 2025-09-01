@@ -1,6 +1,33 @@
 """Functions for writing values to and reading from Excel spreadsheets on
-Mac OS operating systems.
+using xlwings.  Use this on Mac OS / Linux operating systems.
 """
+import xlwings as xw
+
+
+def open_excel(visible=False, display_alerts=False):
+    """This step is not needed in xlwings. The Application can be accessed
+    once a workbook has been opened using the wb.app attribute.
+    """
+    return None
+
+
+def open_workbook(excel, filepath):
+    return xw.Book(filepath)
+
+
+def get_worksheet(wb, sheet_no):
+    return wb.sheets[sheet_no - 1]  # Note: zero-based indexing
+
+
+def recalculate_workbook(wb):
+    # Force Excel to recalculate all formulas
+    wb.app.calculate()
+
+
+def close_workbook(wb, save=True):
+    if save:
+        wb.save()
+    wb.close()
 
 
 def validate_name_value(ws, name, cell_ref):
@@ -176,8 +203,7 @@ def evaluate_excel_sheet(
             raise ValueError(f"No cell ref for {var_name!r}")
         set_var_value(ws, var_name, cell_ref, values)
 
-    # Force Excel to recalculate all formulas
-    wb.app.calculate()
+    recalculate_workbook(wb)
 
     # If not specified, read all variable values except the inputs
     if output_vars is None:

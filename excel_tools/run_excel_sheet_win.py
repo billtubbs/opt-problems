@@ -1,11 +1,100 @@
-import os
-import time
-import win32com.client as win32
 import pywintypes
-import numpy as np
-import pandas as pd
-from itertools import product
-from collections import defaultdict
+import win32com.client as win32
+import pythoncom
+import gc
+
+
+def open_excel(visible=False, display_alerts=False):
+    """Initialize COM and create Excel application instance.
+
+    Returns:
+        Excel application object
+    """
+    # Initialize COM for this thread
+    pythoncom.CoInitialize()
+
+    try:
+        # Create Excel application
+        excel = win32.Dispatch('Excel.Application')
+        excel.Visible = visible
+        excel.DisplayAlerts = display_alerts
+        return excel
+
+    except Exception as e:
+        # Cleanup COM if Excel creation fails
+        pythoncom.CoUninitialize()
+        raise e
+
+
+def open_workbook(excel, filepath):
+    """Open an Excel workbook using the provided Excel application.
+
+    Args:
+        excel: Excel application object from open_excel()
+        filepath (str): Full path to the Excel file
+
+    Returns:
+        Workbook object
+    """
+    return excel.Workbooks.Open(filepath)
+
+
+def get_worksheet(wb, sheet_no):
+    """Get a worksheet from the workbook.
+
+    Args:
+        wb: Workbook object from open_workbook()
+        sheet_no (int): Sheet number (1-based indexing to match xlwings)
+
+    Returns:
+        Worksheet object
+    """
+    return wb.Sheets(sheet_no)
+
+
+def recalculate_workbook(wb):
+    """Force Excel to recalculate all formulas."""
+    wb.Application.Calculate()
+
+
+def close_workbook(wb, save=True):
+    """Close the workbook.
+
+    Args:
+        wb: Workbook object to close
+        save (bool): Whether to save changes before closing (default: True)
+    """
+    try:
+        if save:
+            wb.Save()
+        wb.Close(SaveChanges=save)
+    except Exception as e:
+        print(f"Warning: Error closing workbook: {e}")
+
+
+def quit_excel(excel):
+    """Quit Excel application and cleanup COM.
+
+    Args:
+        excel: Excel application object to quit
+    """
+    try:
+        if excel is not None:
+            # Restore default settings
+            excel.DisplayAlerts = True
+            # Quit Excel
+            excel.Quit()
+    except Exception as e:
+        print(f"Warning: Error quitting Excel: {e}")
+
+    finally:
+        # Force garbage collection to release COM objects
+        gc.collect()
+        # Uninitialize COM
+        try:
+            pythoncom.CoUninitialize()
+        except Exception as e:
+            print(f"Warning: Error uninitializing COM: {e}")
 
 
 def get_cell(ws, cell_ref):
@@ -166,38 +255,17 @@ def evaluate_excel_sheet(
     when this function is called.
     """
 
-    # Get teh Excel app
-    excel = wb.Application
-
     # Get the worksheet
     ws = wb.Sheets(sheet)
 
     # Copy input variable values to specified cells
     for (var_name, values) in inputs.items():
-        name_cell, value_cells = cell_refs[var_name]
+        cell_ref = cell_refs[var_name]
+        if cell_ref is None:
+            raise ValueError(f"No cell ref for {var_name!r}")
+        set_var_value(ws, var_name, cell_ref, values)
 
-        # Check variable name matches
-        name_cell_value = ws.Range(name_cell).Value
-        msg = (
-            f"variable name mismatch: expected {var_name}, "
-            f"got {name_cell_value}"
-        )
-        assert name_cell_value == var_name, msg
-
-        # Set values
-        try:
-            len(values)
-        except TypeError:
-            ws.Range(value_cells).Value = values
-        else:
-            for cell_ref, value in zip(value_cells, values):
-                ws.Range(cell_ref).Value = value
-
-    # Wait until all asynchronous queries (e.g. Power Query) are complete
-    excel.CalculateUntilAsyncQueriesDone()
-
-    # Force Excel to recalculate all formulas
-    excel.CalculateFullRebuild()
+    recalculate_workbook(wb)
 
     # If not specified, read all variable values except the inputs
     if output_vars is None:
@@ -205,15 +273,9 @@ def evaluate_excel_sheet(
 
     outputs = {}
     for var_name in output_vars:
-        name_cell, value_cells = cell_refs[var_name]
-        assert ws.Range(name_cell).Value == var_name, "variable name mismatch"
-        try:
-            value = ws.Range(value_cells).Value
-        except pywintypes.com_error:
-            # Allow cell_ref to be a list of cell refs
-            value = [
-                ws.Range(cell_ref).Value for cell_ref in value_cells
-            ]
-        outputs[var_name] = value
+        cell_ref = cell_refs[var_name]
+        if cell_ref is None:
+            raise ValueError(f"No cell ref for {var_name!r}")
+        outputs[var_name] = get_var_value(ws, var_name, cell_ref)
 
     return outputs
