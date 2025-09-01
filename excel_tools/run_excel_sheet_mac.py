@@ -46,7 +46,7 @@ def get_var_value(ws, name, cell_ref):
         value = ws.range(value_cell_refs).value
     elif isinstance(value_cell_refs, list):
         # Get multiple values
-        return [ws.range(cell_ref).value for cell_ref in value_cell_refs]
+        value = [ws.range(cell_ref).value for cell_ref in value_cell_refs]
     else:
         raise TypeError(
             f"Invalid cell reference type: {type(value_cell_refs)}. "
