@@ -108,7 +108,7 @@ def set_var_value(ws, name, cell_ref, values):
 
 
 def evaluate_excel_sheet(
-    excel, wb, inputs, cell_refs, output_vars=None, sheet=1
+    wb, inputs, cell_refs, output_vars=None, sheet=1
 ):
     """Inserts input variable values into specified cells,
     recalculates the sheet, and then reads the values of the
@@ -165,6 +165,9 @@ def evaluate_excel_sheet(
     option to 'manual'. Recalculation will be automatically triggered
     when this function is called.
     """
+
+    # Get teh Excel app
+    excel = wb.Application
 
     # Get the worksheet
     ws = wb.Sheets(sheet)

@@ -6,6 +6,8 @@ import pythoncom
 import gc
 import numpy as np
 import pandas as pd
+from itertools import product
+from collections import defaultdict
 from excel_tools.run_excel_sheet_win import (
     validate_name_value,
     get_var_value,
@@ -116,7 +118,8 @@ def test_validate_name_value(excel_app, ref_style):
 
     # Path to Excel file
     filename = problem_data['filename']
-    filepath = os.path.join(os.getcwd(), PROBLEMS_DIR, problem, filename)
+    filepath = os.path.abspath(os.path.join(PROBLEMS_DIR, problem, filename))
+
     sheet = problem_data['sheet']
     cell_refs = problem_data['cell_refs'][ref_style]
     expected_values = problem_data['expected_values']
@@ -148,7 +151,8 @@ def test_set_and_get_var_value(excel_app, problem, ref_style):
 
     # Path to Excel file
     filename = problem_data['filename']
-    filepath = os.path.join(os.getcwd(), PROBLEMS_DIR, problem, filename)
+    filepath = os.path.abspath(os.path.join(PROBLEMS_DIR, problem, filename))
+
     sheet = problem_data['sheet']
     cell_refs = problem_data['cell_refs'][ref_style]
     expected_values = problem_data['expected_values']
@@ -172,10 +176,11 @@ def test_set_and_get_var_value(excel_app, problem, ref_style):
         set_var_value(ws, x_name, cell_refs[x_name], x)
 
         # Wait until all asynchronous queries (e.g. Power Query) are complete
-        excel_app.CalculateUntilAsyncQueriesDone()
+        excel = wb.Application
+        excel.CalculateUntilAsyncQueriesDone()
 
         # Force Excel to recalculate all formulas
-        excel_app.CalculateFullRebuild()
+        excel.CalculateFullRebuild()
 
         for name in other_var_names:
             values[name] = get_var_value(ws, name, cell_refs[name])
@@ -193,7 +198,9 @@ def test_on_Toy1DProblem(excel_app):
     problem_name = "toy_1d"
     filename = "Toy-1D-Problem.xlsx"
     cell_refs = TEST_PROBLEMS[problem_name]["cell_refs"]["A1"]
-    filepath = os.path.join(PROBLEMS_DIR, problem_name, filename)
+    filepath = os.path.abspath(
+        os.path.join(PROBLEMS_DIR, problem_name, filename)
+    )
 
     # Check if file exists
     if not os.path.exists(filepath):
@@ -222,11 +229,10 @@ def test_on_Toy1DProblem(excel_app):
         for x in tqdm(x_values):
             inputs = {'x': x}
             outputs = evaluate_excel_sheet(
-                excel_app.excel,
                 wb,
                 inputs,
                 cell_refs,
-                output_vars=['name', 'x_lb', 'x_ub'],
+                output_vars=['f(x)'],
                 sheet=1
             )
             f_eval.append(outputs['f(x)'])
@@ -252,74 +258,67 @@ def test_on_Toy1DProblem(excel_app):
     assert_frame_equal(results_summary[['x', 'f(x)']], expected_results)
 
 
-# def test_on_Toy2DProblemConstraint():
+def test_on_Toy2DProblemConstraint(excel_app):
 
-#     # Path to your Excel file
-#     problem_name = "toy_2d_const"
-#     filename = "Toy-2D-Problem-Constraint.xlsx"
-#     cell_refs = {
-#         'name': ('B2', 'C2'),
-#         'f(x)': ('B3', 'C3'),
-#         'x': ('B4', ['C4', 'D4']),
-#         'g(x)': ('B5', 'C5'),
-#         'x_lb': ('B6', 'C6:D6'),  # alternative way to define range
-#         'x_ub': ('B7', 'C7:D7')
-#     }
-#     filepath = os.path.join(PROBLEMS_DIR, problem_name, filename)
+    # Path to Excel file
+    problem_name = "toy_2d_const"
+    filename = "Toy-2D-Problem-Constraint.xlsx"
+    cell_refs = TEST_PROBLEMS[problem_name]["cell_refs"]["A1"]
+    filepath = os.path.abspath(
+        os.path.join(PROBLEMS_DIR, problem_name, filename)
+    )
 
-#     # Check if file exists
-#     if not os.path.exists(filepath):
-#         raise FileNotFoundError(f"Excel file not found: {filepath}")
+    # Check if file exists
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Excel file not found: {filepath}")
 
-#     # Open the workbook with win32
-#     try:
-#         wb = xw.Book(filepath)
-#         print(f"Successfully opened: {filename}")
-#     except Exception as e:
-#         print(f"Error opening Excel file: {e}")
-#         raise
+    wb = None
+    try:
+        # Use the fixture-provided Excel instance
+        wb = excel_app.Workbooks.Open(filepath)
 
-#     try:
-#         # Check the problem parameters
-#         inputs = {'x': [0.0, 0.0]}
-#         outputs = evaluate_excel_sheet(
-#             wb, inputs, cell_refs, output_vars=['name', 'x_lb', 'x_ub']
-#         )
-#         print("Test: ", outputs['name'])
-#         assert outputs['name'] == 'Toy2DProblemConstraint'
-#         assert outputs['x_lb'] == [-5, -5]
-#         assert outputs['x_ub'] == [5, 5]
+        # Check the problem parameters
+        inputs = {'x': [0.0, 0.0]}
+        outputs = evaluate_excel_sheet(
+            wb, inputs, cell_refs, output_vars=['name', 'x_lb', 'x_ub']
+        )
+        print("Test: ", outputs['name'])
+        assert outputs['name'] == 'Toy2DProblemConstraint'
+        assert outputs['x_lb'] == [-5, -5]
+        assert outputs['x_ub'] == [5, 5]
 
-#         x1_values = np.linspace(-5, 5, 11)
-#         x2_values = np.linspace(-5, 5, 11)
-#         n_iters = x1_values.shape[0] * x2_values.shape[0]
-#         results = defaultdict(list)
-#         t0 = time.time()
-#         print("Evaluating excel sheet...")
-#         for x1, x2 in tqdm(product(x1_values, x2_values), total=n_iters):
-#             inputs = {'x': [x1, x2]}
-#             outputs = evaluate_excel_sheet(
-#                 wb, inputs, cell_refs, output_vars=['f(x)', 'g(x)']
-#             )
-#             results['x1'].append(x1)
-#             results['x2'].append(x2)
-#             results['f_eval'].append(outputs['f(x)'])
-#             results['g_eval'].append(outputs['g(x)'])
-#             results['timings'].append(time.time() - t0)
+        x1_values = np.linspace(-5, 5, 11)
+        x2_values = np.linspace(-5, 5, 11)
+        n_iters = x1_values.shape[0] * x2_values.shape[0]
+        results = defaultdict(list)
+        t0 = time.time()
+        print("Evaluating excel sheet...")
+        for x1, x2 in tqdm(product(x1_values, x2_values), total=n_iters):
+            inputs = {'x': [x1, x2]}
+            outputs = evaluate_excel_sheet(
+                wb, inputs, cell_refs, output_vars=['f(x)', 'g(x)']
+            )
+            results['x1'].append(x1)
+            results['x2'].append(x2)
+            results['f_eval'].append(outputs['f(x)'])
+            results['g_eval'].append(outputs['g(x)'])
+            results['timings'].append(time.time() - t0)
 
-#         # Print results and timings
-#         results_summary = pd.DataFrame(results)
-#         print(results_summary)
+    finally:
+        if wb is not None:
+            wb.Close(SaveChanges=False)
 
-#         # Check results match data on file
-#         filename = 'Toy2DProblemConstraint.csv'
-#         expected_results = pd.read_csv(
-#             os.path.join(TEST_DATA_DIR, filename), index_col=0
-#         )
-#         assert_frame_equal(
-#             results_summary[['x1', 'x2', 'f_eval', 'g_eval']],
-#             expected_results
-#         )
+    # Save results and timings
+    results_summary = pd.DataFrame(results)
+    filename = f"{problem_name}_win32.csv"
+    results_summary.to_csv(os.path.join(TEST_RESULTS_DIR, filename))
 
-#     finally:
-#         wb.Close(SaveChanges=False)
+    # Check results match data on file
+    filename = 'Toy2DProblemConstraint.csv'
+    expected_results = pd.read_csv(
+        os.path.join(TEST_DATA_DIR, filename), index_col=0
+    )
+    assert_frame_equal(
+        results_summary[['x1', 'x2', 'f_eval', 'g_eval']],
+        expected_results
+    )
