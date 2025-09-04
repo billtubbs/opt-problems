@@ -12,6 +12,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "pandas",
+    "casadi",
     "jupyter",
     "numba",
     "pyyaml",
