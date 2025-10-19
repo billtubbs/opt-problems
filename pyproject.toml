@@ -15,6 +15,7 @@ dependencies = [
     "casadi",
     "jupyter",
     "numba",
+    "pint",
     "pyyaml",
     "tqdm",
     "scikit-learn",
