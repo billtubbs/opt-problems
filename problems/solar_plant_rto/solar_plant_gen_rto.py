@@ -1,17 +1,21 @@
 """Solar Plant Real-Time Optimization (RTO) Module
 
 This module contains functions for modeling and optimizing a solar thermal
-plant with collector loops, pumps, and thermal oil circulation.
+plant with collector loops, power generation and thermal oil circulation.
 """
 
 import casadi as cas
 
 # Constants
 COLLECTOR_VALVE_RANGEABILITY = 50.0
-COLLECTOR_VALVE_B = 0.04
-COLLECTOR_VALVE_C = 0.4
+COLLECTOR_VALVE_G_SQUIGGLE = 0.671
+COLLECTOR_VALVE_ALPHA = 0.05 * (
+    850 / 30**2 - 0.671 / (10 * (50 ** (0.95 - 1)) ** 2) ** 2
+)
+COLLECTOR_VALVE_CV = 10.0
+MIRROR_CONCENTRATION_FACTOR = 52
 PUMP_SPEED_MIN = 1000
-PUMP_SPEED_MAX = 2970
+PUMP_SPEED_MAX = 2970  # ✓
 BOILER_FLOW_LOSS_FACTOR = 0.038
 PUMP_DP_MAX = 1004.2368
 PUMP_QMAX = 224.6293
@@ -20,9 +24,9 @@ OIL_RHO = 800  # Kg/m^3
 OIL_RHO_CP = 1600
 HO = 0.00361
 D_OUT = 0.07  # m
-GENERATOR_EFFICIENCY = 0.85
+GENERATOR_EFFICIENCY = 0.85  # ✓
 
-LOOP_THERMAL_EFFICIENCIES = [
+LOOP_THERMAL_EFFICIENCIES = [  # ✓
     0.9,
     0.88,
     0.86,
@@ -66,13 +70,15 @@ def actual_pump_speed_from_scaled(speed_scaled):
     """Convert scaled pump speed (0.2-1.0) to actual speed (rpm)."""
     return (
         PUMP_SPEED_MIN
-        + (speed_scaled - 0.2) * (PUMP_SPEED_MAX - PUMP_SPEED_MIN) / 0.8
+        + (speed_scaled - 0.3) * (PUMP_SPEED_MAX - PUMP_SPEED_MIN) / 0.7
     )
 
 
-def calculate_pump_and_drive_efficiency(total_flow_rate, actual_pump_speed):
-    """Calculate pump and drive efficiency from flow rate and pump speed."""
-    x = total_flow_rate / actual_pump_speed
+def calculate_pump_and_drive_efficiency(flow_rate, actual_pump_speed):
+    """Calculate pump and drive efficiency from flow rate and pump speed.
+    Excel BI36: =(($AD$23/$F$1)/$C$7)*(48.91052-123.18953*(($AD$23/$F$1)/$C$7)^0.392747)
+    """
+    x = flow_rate / actual_pump_speed
     return x * (48.91052 - 123.18953 * x**0.392747)
 
 
@@ -85,15 +91,18 @@ def calculate_collector_flow_rate(
     valve_position,
     loop_dp,
     rangeability=COLLECTOR_VALVE_RANGEABILITY,
-    b=COLLECTOR_VALVE_B,
-    c=COLLECTOR_VALVE_C,
+    g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+    alpha=COLLECTOR_VALVE_ALPHA,
+    cv=COLLECTOR_VALVE_CV,
     sqrt=cas.sqrt,
 ):
     """Calculate flow rate through a collector loop from valve position
     and loop dp.
+    Cell AD8: =$J$28*D8*SQRT(($AC$23)/($F$4+$F$5*($J$28*D8)^2))
     """
     f = rangeability ** (valve_position - 1.0)
-    return f * sqrt(loop_dp / (b + c * f**2))
+    flow_rate = cv * f * sqrt(loop_dp / (g_squiggle + alpha * (cv * f) ** 2))
+    return flow_rate
 
 
 def calculate_total_flowrate(
@@ -107,8 +116,16 @@ def calculate_total_flowrate(
 
 
 def calculate_boiler_dp(total_flow_rate):
-    """Calculate boiler differential pressure from total flow rate."""
-    return BOILER_FLOW_LOSS_FACTOR * total_flow_rate**2
+    """Calculate boiler differential pressure from total flow rate.
+    Excel Q_max = M27 = (M25-M26)/K26^2
+    """
+    N_pumps = 5
+    a = 0.05
+    M25 = 850 / 30**2 - 0.671 / (10 * (50 ** (0.95 - 1)) ** 2) ** 2
+    Q_max = (1.0 - a) * M25 / N_pumps**2
+    boiler_dp = Q_max * total_flow_rate**2
+
+    return boiler_dp
 
 
 def calculate_pump_dp(
@@ -122,17 +139,19 @@ def calculate_pump_dp(
 ):
     """Calculate pump differential pressure from speed, flow rate, and
     number of pumps.
+    Excel AB21: =IF((AA23/$F$1)*$C$5/($C$4*$C$7)<1,
+      $C$3*(($C$7/$C$5)^2)*(1-(AA23/$F$1)*$C$5/($C$4*$C$7))^$C$6, 0
+    )
     """
     dp = (
         dp_max
         * ((actual_speed / max_speed) ** 2)
         * (
             1
-            - (total_flow_rate * max_speed / (m_pumps * q_max * actual_speed))
-            ** exponent
+            - (total_flow_rate / m_pumps) * max_speed / (q_max * actual_speed)
         )
+        ** exponent
     )
-    # TODO: This is different in latest spreadsheet.  Is this wrong?
     return dp
 
 
@@ -202,7 +221,7 @@ def make_calculate_pump_and_drive_power_function(
     actual_pump_speed = actual_pump_speed_from_scaled(pump_speed_scaled)
 
     pump_and_drive_efficiency = calculate_pump_and_drive_efficiency(
-        total_flow_rate, actual_pump_speed
+        total_flow_rate / m_pumps, actual_pump_speed
     )
 
     pump_dp = calculate_pump_dp(actual_pump_speed, total_flow_rate, m_pumps)
@@ -229,16 +248,23 @@ def calculate_collector_oil_exit_temp(
     ambient_temp,
     solar_rate,
     loop_thermal_efficiency,
+    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
+    fluid_ho=HO,
+    fluid_rho_cp=OIL_RHO_CP,
+    d_out=D_OUT,
     exp=cas.exp,
     pi=cas.pi,
 ):
     """Calculate oil exit temperature for a collector loop."""
     a = (
-        solar_rate * 50 / 1000
-    ) * loop_thermal_efficiency / pi / HO + ambient_temp
-    b = oil_return_temp - a
-    tau = (flow_rate / 3600) * OIL_RHO_CP / pi / HO / D_OUT
-    return a + b * exp(-192 / tau)
+        solar_rate
+        * mirror_concentration_factor
+        * loop_thermal_efficiency
+        / (2 * 1000 * fluid_ho)
+    ) + ambient_temp
+    b = a - oil_return_temp
+    tau = (flow_rate / 3600) * fluid_rho_cp / pi / fluid_ho / d_out
+    return a - b * exp(-96 / tau)
 
 
 def calculate_rms_oil_exit_temps(
@@ -285,7 +311,7 @@ def make_collector_exit_temps_and_pump_power_function(
     actual_pump_speed = actual_pump_speed_from_scaled(pump_speed_scaled)
 
     pump_and_drive_efficiency = calculate_pump_and_drive_efficiency(
-        total_flow_rate, actual_pump_speed
+        total_flow_rate / m_pumps, actual_pump_speed
     )
 
     pump_dp = calculate_pump_dp(actual_pump_speed, total_flow_rate, m_pumps)

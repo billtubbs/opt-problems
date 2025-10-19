@@ -4,14 +4,14 @@ This replicates calculations in the Excel spreadsheet implementation
 from R R Rhinehart so they can be solved using CasADi.
 
 Excel file used for test data:
-- `Solar Plant Optimization of N-Pumps I-O 2025-08-29.xlsm`
+- `SS Solar Plant Optimization New Thermal & Flow Model 15 DVs I-O 2025-10-12a.xlsx`
 
 """
 
 import casadi as cas
 import numpy as np
 
-from problems.solar_plant_rto.solar_plant_rto import (
+from problems.solar_plant_rto.solar_plant_gen_rto import (
     PUMP_SPEED_MAX,
     PUMP_SPEED_MIN,
     actual_pump_speed_from_scaled,
@@ -32,59 +32,59 @@ from problems.solar_plant_rto.solar_plant_rto import (
 
 # Test data from Excel spreadsheet
 test_data = {
-    "n_lines": 15,
-    "m_pumps": 2,
-    "pump_speed_scaled": 0.75346732613277,
-    "actual_pump_speed": 2362.913291,
-    "pump_dp": 629.0871255,
-    "boiler_dp": 592.0326755,
-    "total_flow_rate": 124.8190981,
-    "pump_fluid_power": 21.81169101,
-    "valve_positions": np.array(
+    "n_lines": 15,  # ✓
+    "m_pumps": 3,  # ✓
+    "pump_speed_scaled": 0.739913018149835,  # ✓
+    "actual_pump_speed": 2238.040923,  # ✓
+    "pump_dp": 257.2307857,  # ✓
+    "boiler_dp": 255.1689754,  # ✓
+    "total_flow_rate": 84.98338307,  # ✓
+    "pump_fluid_power": 6.072317334,  # ✓
+    "valve_positions": np.array(  # ✓
         [
-            1.000000000,
-            0.936959219,
-            0.896931101,
-            0.865584094,
-            0.836992607,
-            0.812643981,
-            0.789969825,
-            0.769361992,
-            0.93925857,
-            0.898066194,
-            0.864955164,
-            0.837553205,
-            0.812789834,
-            0.789567955,
-            0.769638106,
+            1.0,
+            0.955991652,
+            0.922910885,
+            0.894335128,
+            0.869386075,
+            0.846574862,
+            0.826129052,
+            0.80724668,
+            0.956319885,
+            0.922542333,
+            0.894089015,
+            0.869386891,
+            0.846759913,
+            0.826256799,
+            0.807127717,
         ]
     ),
-    "loop_dp": 37.05445002,
-    "collector_flow_rates": np.array(
+    "loop_dp": 2.061810328,  # ✓
+    "collector_flow_rates": np.array(  # ✓
         [
-            9.176854533,
-            8.921921744,
-            8.699651745,
-            8.486496198,
-            8.259228335,
-            8.039822348,
-            7.813881615,
-            7.590786245,
-            8.933134895,
-            8.706698355,
-            8.481841868,
-            8.263997082,
-            8.041208355,
-            7.809690683,
-            7.593884098,
+            6.225501621,
+            6.070138765,
+            5.923894153,
+            5.77480293,
+            5.626327169,
+            5.475290723,
+            5.32759246,
+            5.181170423,
+            6.07145634,
+            5.922109432,
+            5.773422776,
+            5.62633231,
+            5.4765747,
+            5.3285508,
+            5.180218472,
         ]
     ),
-    "pump_and_drive_efficiency": 0.533426021,
-    "pump_and_drive_power": 40.88981445,
-    "oil_return_temp": 273,
-    "ambient_temp": 20,
-    "solar_rate": 900,
-    "loop_thermal_efficiencies": np.array(
+    "pump_and_drive_efficiency": 0.338782267,  # ✓
+    "pump_and_drive_power": 17.92395274,  # ✓
+    "oil_return_temp": 273.5052133,  # ✓
+    "ambient_temp": 20,  # ✓
+    "solar_rate": 700,  # ✓
+    "loop_thermal_efficiencies": np.array(  # ✓
         [
             0.9,
             0.88,
@@ -105,39 +105,47 @@ test_data = {
     ),
     "oil_exit_temps": np.array(
         [
-            394.7139109242,
-            395.1327523393,
-            395.1245265650,
-            394.9873377920,
-            395.0471019449,
-            394.9932710362,
-            395.0362115268,
-            395.0368832622,
-            394.9823714639,
-            395.0276211405,
-            395.0529329871,
-            394.9781258321,
-            394.9726891283,
-            395.1002726780,
-            394.9882151924,
+            389.8923752,
+            390.0208235,
+            389.9789458,
+            389.9915139,
+            389.9921759,
+            390.0464908,
+            390.031934,
+            389.9883183,
+            389.9958936,
+            390.0135412,
+            390.0189488,
+            389.9920711,
+            390.0195934,
+            390.0113121,
+            390.0093716,
         ]
     ),
-    "rms_dev": 0.0949969508554,
+    "rms_dev": 4.999893601,
 }
+
+
+# Items changed compared t0 test_solar_plant_rto.py:
+#   - m_pumps: 2 -> 3
+#   - pump_speed_scaled (min): 0.2 -> 0.3
+#   - collector valve flowrate formula changed
+#   - change to calculate_pump_dp
+#   - collector outlet temp formula changed (a, b)
 
 
 class TestPumpAndFlowCalculations:
     """Tests for pump and flow calculation functions."""
 
-    def test_total_flow_rate_data(self):
+    def test_total_flow_rate_data(self):  # ✓
         assert np.isclose(
             test_data["total_flow_rate"],
             np.sum(test_data["collector_flow_rates"]),
         )
 
-    def test_actual_pump_speed_from_scaled(self):
+    def test_actual_pump_speed_from_scaled(self):  # ✓
         """Test pump speed conversion."""
-        assert actual_pump_speed_from_scaled(0.2) == PUMP_SPEED_MIN
+        assert actual_pump_speed_from_scaled(0.3) == PUMP_SPEED_MIN
         assert actual_pump_speed_from_scaled(1.0) == PUMP_SPEED_MAX
         pump_speed_scaled = test_data["pump_speed_scaled"]
         actual_pump_speed = test_data["actual_pump_speed"]
@@ -145,14 +153,14 @@ class TestPumpAndFlowCalculations:
             actual_pump_speed_from_scaled(pump_speed_scaled), actual_pump_speed
         )
 
-    def test_calculate_pump_fluid_power(self):
+    def test_calculate_pump_fluid_power(self):  # ✓
         """Test pump fluid power calculation."""
         total_flow_rate = test_data["total_flow_rate"]
         pump_dp = test_data["pump_dp"]
         pump_fluid_power = calculate_pump_fluid_power(total_flow_rate, pump_dp)
         assert np.isclose(pump_fluid_power, test_data["pump_fluid_power"])
 
-    def test_calculate_collector_flow_rate(self):
+    def test_calculate_collector_flow_rate(self):  # ✓
         """Test collector flow rate calculation."""
         valve_position = test_data["valve_positions"][1]
         loop_dp = test_data["loop_dp"]
@@ -163,7 +171,7 @@ class TestPumpAndFlowCalculations:
             collector_flow_rate, test_data["collector_flow_rates"][1]
         )
 
-    def test_calculate_total_flowrate(self):
+    def test_calculate_total_flowrate(self):  # ✓
         """Test total flow rate calculation."""
         valve_positions = test_data["valve_positions"]
         loop_dp = test_data["loop_dp"]
@@ -172,13 +180,13 @@ class TestPumpAndFlowCalculations:
         )
         assert np.isclose(total_flowrate, test_data["total_flow_rate"])
 
-    def test_calculate_boiler_dp(self):
+    def test_calculate_boiler_dp(self):  # ✓
         """Test boiler differential pressure calculation."""
         total_flow_rate = test_data["total_flow_rate"]
         boiler_dp = calculate_boiler_dp(total_flow_rate)
         assert np.isclose(boiler_dp, test_data["boiler_dp"])
 
-    def test_calculate_pump_dp(self):
+    def test_calculate_pump_dp(self):  # ✓
         """Test pump differential pressure calculation."""
         actual_pump_speed = test_data["actual_pump_speed"]
         total_flow_rate = test_data["total_flow_rate"]
@@ -188,7 +196,7 @@ class TestPumpAndFlowCalculations:
         )
         assert np.isclose(pump_dp, test_data["pump_dp"])
 
-    def test_calculate_pressure_balance(self):
+    def test_calculate_pressure_balance(self):  # ✓
         """Test pressure balance calculation."""
         loop_dp = test_data["loop_dp"]
         pump_dp = test_data["pump_dp"]
@@ -198,7 +206,7 @@ class TestPumpAndFlowCalculations:
         )
         assert np.isclose(pressure_balance, 0.0, atol=1e-7)
 
-    def test_pump_and_drive_efficiency_and_power(self):
+    def test_pump_and_drive_efficiency_and_power(self):  # ✓
         """Test pump and drive efficiency and power calculations."""
         valve_positions = test_data["valve_positions"]
         loop_dp = test_data["loop_dp"]
@@ -215,8 +223,9 @@ class TestPumpAndFlowCalculations:
         pump_fluid_power = calculate_pump_fluid_power(total_flow_rate, pump_dp)
         assert np.isclose(pump_fluid_power, test_data["pump_fluid_power"])
 
+        m_pumps = test_data["m_pumps"]
         pump_and_drive_efficiency = calculate_pump_and_drive_efficiency(
-            total_flow_rate, actual_pump_speed
+            total_flow_rate / m_pumps, actual_pump_speed
         )
         assert np.isclose(
             pump_and_drive_efficiency, test_data["pump_and_drive_efficiency"]
@@ -231,8 +240,7 @@ class TestPumpAndFlowCalculations:
 class TestOilTemperatureCalculations:
     """Tests for oil temperature calculation functions."""
 
-    def test_calculate_collector_oil_exit_temp_single(self):
-        """Test oil exit temperature calculation for single collector."""
+    def test_calculate_collector_oil_exit_temp_single(self):  # ✓
         """Test oil exit temperature calculation for single collector."""
         flow_rate = test_data["collector_flow_rates"][0]
         oil_return_temp = test_data["oil_return_temp"]
@@ -250,7 +258,7 @@ class TestOilTemperatureCalculations:
         )
         assert np.isclose(oil_exit_temp, test_data["oil_exit_temps"][0])
 
-    def test_calculate_collector_oil_exit_temp_vectorized(self):
+    def test_calculate_collector_oil_exit_temp_vectorized(self):  # ✓
         """Test oil exit temperature calculation for multiple collectors."""
         collector_flow_rates = cas.DM(test_data["collector_flow_rates"])
         oil_return_temp = test_data["oil_return_temp"]
@@ -270,7 +278,7 @@ class TestOilTemperatureCalculations:
             oil_exit_temps, test_data["oil_exit_temps"].reshape(-1, 1)
         )
 
-    def test_calculate_rms_oil_exit_temps(self):
+    def test_calculate_rms_oil_exit_temps(self):  # ✓
         """Test RMS deviation calculation."""
         oil_exit_temps = cas.DM(test_data["oil_exit_temps"])
         oil_exit_temps_sp = cas.repmat(cas.DM(395.0), 15, 1)
