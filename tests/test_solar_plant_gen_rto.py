@@ -25,6 +25,7 @@ from problems.solar_plant_rto.solar_plant_gen_rto import (
     calculate_pump_fluid_power,
     calculate_rms_oil_exit_temps,
     calculate_total_flowrate,
+    heat_exchanger_solution_error,
     make_calculate_pump_and_drive_power_function,
     make_collector_exit_temps_and_pump_power_function,
     make_pressure_balance_function,
@@ -103,7 +104,7 @@ test_data = {
             0.76,
         ]
     ),
-    "oil_exit_temps": np.array(
+    "oil_exit_temps": np.array(  # ✓
         [
             389.8923752,
             390.0208235,
@@ -122,7 +123,16 @@ test_data = {
             390.0093716,
         ]
     ),
-    "rms_dev": 4.999893601,
+    "rms_dev": 4.999893601,  # ✓
+    "T_oil_mixed": 389.9992819,
+    "T_forecast": 394.9751366,
+    "m_dot": 1.327844026,
+    "T1": 389.7123306,
+    "T2": 310.2604821,
+    "Tr": 273.5052133,
+    "hx1_area": 0.0117483100468,
+    "hx2_area": 0.1429090533235,
+    "hx3_area": 0.0953425637215,
 }
 
 
@@ -363,6 +373,16 @@ class TestCasADiFunctions:
 
 class TestSteamGeneratorModel:
     """Tests for steam generator model functions."""
+
+    def test_heat_exchanger_solution_error(self):
+        """Test heat exchanger area constraint error calculation."""
+        m_dot = test_data["m_dot"]
+        T1 = test_data["T1"]
+        T2 = test_data["T2"]
+        Tr = test_data["Tr"]
+        oil_flow_rate = test_data["total_flow_rate"]
+        error = heat_exchanger_solution_error(m_dot, T1, T2, Tr, oil_flow_rate)
+        assert np.isclose(error, 0.0, atol=1e-7)
 
     def test_calculate_net_power(self):
         """Test net power calculation."""

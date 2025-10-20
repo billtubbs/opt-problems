@@ -6,7 +6,11 @@ plant with collector loops, power generation and thermal oil circulation.
 
 import casadi as cas
 
-# Constants
+# =============================================================================
+# DEFAULT CONSTANTS
+# =============================================================================
+
+# Collector lines
 COLLECTOR_VALVE_RANGEABILITY = 50.0
 COLLECTOR_VALVE_G_SQUIGGLE = 0.671
 COLLECTOR_VALVE_ALPHA = 0.05 * (
@@ -21,7 +25,7 @@ PUMP_DP_MAX = 1004.2368
 PUMP_QMAX = 224.6293
 PUMP_EXPONENT = 4.346734
 OIL_RHO = 800  # Kg/m^3
-OIL_RHO_CP = 1600
+OIL_RHO_CP = 1600  # kJ/m^3-K
 HO = 0.00361
 D_OUT = 0.07  # m
 GENERATOR_EFFICIENCY = 0.85  # ✓
@@ -62,8 +66,26 @@ OIL_EXIT_TEMPS_SP = (
     395.0,
 )
 
+# Power generator default constants
+T_CONDENSATE = 75.0  # deg. C
+T_STEAM = 385.0  # deg. C
+H_VAP = 2260.0  # kJ/kg
+T_FORECAST = 394.9751366  # deg. C
+CP_STEAM = 1.996  # kJ/kg-K
+CP_WATER = 4.182  # kJ/kg-K
+BOILER_T_STEAM_SP = 385.0  # deg. C
+BOILER_T_BOIL = 310.0  # deg. C
+BOILER_T_CONDENSATE = 60  # deg. C
+HX_AREA = 0.25  # m^2
+HX1_U_LIQUID = 900.0  # W/m^2-K
+HX2_U_BOIL = 3000.0  # W/m^2-K
+HX3_U_STEAM = 1000.0  # W/m^2-K
+F_OIL_NOMINAL = 200.0 / 3600.0  # m^3/s
 
-# Pump and Flow Calculations
+
+# =============================================================================
+# PUMP AND FLOW CALCULATIONS
+# =============================================================================
 
 
 def actual_pump_speed_from_scaled(speed_scaled):
@@ -239,7 +261,9 @@ def make_calculate_pump_and_drive_power_function(
     )
 
 
-# Oil Exit Temperature Calculations
+# =============================================================================
+# OIL EXIT TEMPERATURE CALCULATIONS
+# =============================================================================
 
 
 def calculate_collector_oil_exit_temp(
@@ -275,7 +299,10 @@ def calculate_rms_oil_exit_temps(
     return sqrt(sumsqr(oil_exit_temps_sp - oil_exit_temps) / N)
 
 
-# Combined System Model
+# =============================================================================
+# COMBINED SYSTEM MODEL
+# =============================================================================
+# TODO: Need to add steam generator to this
 
 
 def make_collector_exit_temps_and_pump_power_function(
@@ -351,7 +378,198 @@ def make_collector_exit_temps_and_pump_power_function(
     )
 
 
-# Steam Generator Model
+# =============================================================================
+# STEAM GENERATOR MODEL
+# =============================================================================
+
+
+def calculate_dtlm_hx1(
+    T1,
+    T_forecast=T_FORECAST,
+    T_steam_sp=BOILER_T_STEAM_SP,
+    T_boil=BOILER_T_BOIL,
+    log=cas.log,
+):
+    """
+    Calculate log mean temperature difference, HX1
+    Excel BM31: =(($AJ$25-$BP$1)-(BH31-$BP$2))/LN(($AJ$25-$BP$1)/(BH31-$BP$2))
+    """
+    dtlm = ((T_forecast - T_steam_sp) - (T1 - T_boil)) / log(
+        (T_forecast - T_steam_sp) / (T1 - T_boil)
+    )
+    return dtlm
+
+
+def calculate_dtlm_hx2(
+    T1,
+    T2,
+    T_boil=BOILER_T_BOIL,
+    log=cas.log,
+):
+    """
+    Calculate log mean temperature difference, HX2
+    Excel BL31: =(BH31-BI31)/LN((BH31-$BP$2)/(BI31-$BP$2))
+    """
+    dtlm = (T1 - T2) / log((T1 - T_boil) / (T2 - T_boil))
+    return dtlm
+
+
+def calculate_dtlm_hx3(
+    T2,
+    Tr,
+    T_condensate=BOILER_T_CONDENSATE,
+    T_boil=BOILER_T_BOIL,
+    log=cas.log,
+):
+    """
+    Calculate log mean temperature difference, HX3
+    Excel BK31: =((BI31-$BP$2)-(BJ31-$BP$3)/LN((BI31-$BP$2)/(BJ31-$BP$3)))
+    """
+    dtlm = (T2 - T_boil) - (Tr - T_condensate) / log(
+        (T2 - T_boil) / (Tr - T_condensate)
+    )
+    return dtlm
+
+
+def calculate_actual_heat_transfer_coefficient(
+    total_flow_rate, U, F_oil_nominal=F_OIL_NOMINAL
+):
+    """
+    Excel BL2: =BT2/((BT4/($AD$23/3600))^0.8)
+    Excel BL3: =BT3/((BT4/($AD$23/3600))^0.8)
+    Excel BL4: =BX2/((BT4/($AD$23/3600))^0.8)
+    """
+    return U / ((F_oil_nominal / (total_flow_rate / 3600)) ** 0.8)
+
+
+def calculate_Q_dot_hx1(
+    m_dot, cp_steam=CP_STEAM, T_sp=BOILER_T_STEAM_SP, T_boil=BOILER_T_BOIL
+):
+    Q_dot = m_dot * cp_steam * (T_sp - T_boil)
+    return Q_dot
+
+
+def calculate_Q_dot_hx2(m_dot, h_vap=H_VAP):
+    Q_dot = m_dot * h_vap
+    return Q_dot
+
+
+def calculate_Q_dot_hx3(
+    m_dot, cp_water=CP_WATER, T_boil=BOILER_T_BOIL, T_condensate=T_CONDENSATE
+):
+    Q_dot = m_dot * cp_water * (T_boil - T_condensate)
+    return Q_dot
+
+
+def calculate_hx_area(Q_dot, dtlm, U):
+    return Q_dot / (dtlm * U)
+
+
+def heat_exchanger_solution_error(
+    m_dot,
+    T1,
+    T2,
+    Tr,
+    oil_flow_rate,
+    T_forecast=T_FORECAST,
+    T_steam_sp=BOILER_T_STEAM_SP,
+    U_steam=HX3_U_STEAM,
+    U_boil=HX2_U_BOIL,
+    U_liquid=HX1_U_LIQUID,
+    hx_area=HX_AREA,
+    F_oil_nominal=F_OIL_NOMINAL,
+    cp_water=CP_WATER,
+    T_boil=BOILER_T_BOIL,
+    T_condensate=BOILER_T_CONDENSATE,
+    cp_steam=CP_STEAM,
+    h_vap=H_VAP,
+    log=cas.log,
+):
+    """Calculate area constraint error for steam boiler heat exchangers.
+
+    Steam boiler consists of 3 heat exchangers:
+    1. HX1: Superheating steam from boiling to setpoint
+    2. HX2: Boiling water to steam
+    3. HX3: Preheating water from condensate to boiling
+
+    Args:
+        m_dot: Mass flow rate of water/steam (kg/s)
+        T1: Oil temperature entering HX1 (deg C)
+        T2: Oil temperature between HX2 and HX3 (deg C)
+        Tr: Oil return temperature (deg C)
+        oil_flow_rate: Thermal oil flow rate (kg/s)
+        T_forecast: Forecast oil exit temperature (deg C)
+        T_steam_sp: Steam setpoint temperature (deg C)
+        U_steam: Nominal heat transfer coefficient for steam (W/m^2-K)
+        U_boil: Nominal heat transfer coefficient for boiling (W/m^2-K)
+        U_liquid: Nominal heat transfer coefficient for liquid (W/m^2-K)
+        hx_area: Total available heat exchanger area (m^2)
+        F_oil_nominal: Nominal oil flow rate for U coefficient (m^3/s)
+        cp_water: Specific heat capacity of water (kJ/kg-K)
+        T_boil: Boiling temperature (deg C)
+        T_condensate: Condensate temperature (deg C)
+        cp_steam: Specific heat capacity of steam (kJ/kg-K)
+        h_vap: Heat of vaporization (kJ/kg)
+        log: Logarithm function (for CasADi compatibility)
+
+    Returns:
+        Error value (zero when sum of areas equals total available area)
+    """
+
+    # Calculate log mean temperature differences
+    dtlm_hx1 = calculate_dtlm_hx1(
+        T1,
+        T_forecast=T_forecast,
+        T_steam_sp=T_steam_sp,
+        T_boil=T_boil,
+        log=log,
+    )
+
+    dtlm_hx2 = calculate_dtlm_hx2(
+        T1,
+        T2,
+        T_boil=T_boil,
+        log=log,
+    )
+
+    dtlm_hx3 = calculate_dtlm_hx3(
+        T2,
+        Tr,
+        T_condensate=T_condensate,
+        T_boil=T_boil,
+        log=log,
+    )
+
+    # Calculate heat transfer rates
+    Q_dot_hx1 = calculate_Q_dot_hx1(
+        m_dot, cp_steam=cp_steam, T_sp=T_steam_sp, T_boil=T_boil
+    )
+    Q_dot_hx2 = calculate_Q_dot_hx2(m_dot, h_vap=h_vap)
+    Q_dot_hx3 = calculate_Q_dot_hx3(
+        m_dot,
+        cp_water=cp_water,
+        T_boil=T_boil,
+        T_condensate=T_condensate,
+    )
+
+    # Calculate actual
+    U_steam_actual = calculate_actual_heat_transfer_coefficient(
+        oil_flow_rate, U_steam, F_oil_nominal=F_oil_nominal
+    )
+    U_boil_actual = calculate_actual_heat_transfer_coefficient(
+        oil_flow_rate, U_boil, F_oil_nominal=F_oil_nominal
+    )
+    U_liquid_actual = calculate_actual_heat_transfer_coefficient(
+        oil_flow_rate, U_liquid, F_oil_nominal=F_oil_nominal
+    )
+
+    # Required area for each heat exchanger section
+    hx1_area = calculate_hx_area(Q_dot_hx1, dtlm_hx1, U_steam_actual)
+    hx2_area = calculate_hx_area(Q_dot_hx2, dtlm_hx2, U_boil_actual)
+    hx3_area = calculate_hx_area(Q_dot_hx3, dtlm_hx3, U_liquid_actual)
+
+    # Error is zero when sum of areas equals total available area
+    return hx_area - hx1_area - hx2_area - hx3_area
 
 
 def calculate_net_power(
@@ -364,7 +582,9 @@ def calculate_net_power(
     )
 
 
-# RTO Solver
+# =============================================================================
+# RTO SOLVER
+# =============================================================================
 
 
 def solar_plant_rto_solve(
