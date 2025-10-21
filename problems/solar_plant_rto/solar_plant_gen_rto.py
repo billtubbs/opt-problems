@@ -70,7 +70,6 @@ OIL_EXIT_TEMPS_SP = (
 T_CONDENSATE = 75.0  # deg. C
 T_STEAM = 385.0  # deg. C
 H_VAP = 2260.0  # kJ/kg
-T_FORECAST = 394.9751366  # deg. C
 CP_STEAM = 1.996  # kJ/kg-K
 CP_WATER = 4.182  # kJ/kg-K
 BOILER_T_STEAM_SP = 385.0  # deg. C
@@ -98,7 +97,8 @@ def actual_pump_speed_from_scaled(speed_scaled):
 
 def calculate_pump_and_drive_efficiency(flow_rate, actual_pump_speed):
     """Calculate pump and drive efficiency from flow rate and pump speed.
-    Excel BI36: =(($AD$23/$F$1)/$C$7)*(48.91052-123.18953*(($AD$23/$F$1)/$C$7)^0.392747)
+    Excel BI36:
+      =(($AD$23/$F$1)/$C$7)*(48.91052-123.18953*(($AD$23/$F$1)/$C$7)^0.392747)
     """
     x = flow_rate / actual_pump_speed
     return x * (48.91052 - 123.18953 * x**0.392747)
@@ -127,7 +127,7 @@ def calculate_collector_flow_rate(
     return flow_rate
 
 
-def calculate_total_flowrate(
+def calculate_total_oil_flowrate(
     valve_positions, loop_dp, sum=cas.sum1, sqrt=cas.sqrt
 ):
     """Calculate total flow rate from all collector loops."""
@@ -192,7 +192,7 @@ def make_pressure_balance_function(
 
     actual_pump_speed = actual_pump_speed_from_scaled(pump_speed_scaled)
 
-    total_flow_rate = calculate_total_flowrate(
+    total_flow_rate = calculate_total_oil_flowrate(
         valve_positions, loop_dp, sum=sum, sqrt=sqrt
     )
 
@@ -291,6 +291,16 @@ def calculate_collector_oil_exit_temp(
     return a - b * exp(-96 / tau)
 
 
+def calculate_mixed_oil_exit_temp(oil_exit_temps, oil_flow_rates, sum=cas.sum):
+    """
+    Excel AJ24: =SUM(AJ8:AJ22)/AD23
+    """
+    mixed_oil_exit_temp = sum(oil_exit_temps * oil_flow_rates) / sum(
+        oil_flow_rates
+    )
+    return mixed_oil_exit_temp
+
+
 def calculate_rms_oil_exit_temps(
     oil_exit_temps, oil_exit_temps_sp, sqrt=cas.sqrt, sumsqr=cas.sumsqr
 ):
@@ -305,9 +315,7 @@ def calculate_rms_oil_exit_temps(
 # TODO: Need to add steam generator to this
 
 
-def make_collector_exit_temps_and_pump_power_function(
-    n_lines, m_pumps, sum=cas.sum1, sqrt=cas.sqrt, exp=cas.exp, pi=cas.pi
-):
+def make_collector_exit_temps_and_pump_power_function(n_lines, m_pumps):
     """Create a CasADi function for complete system calculation."""
     valve_positions = cas.SX.sym("v", n_lines)
     pump_speed_scaled = cas.SX.sym("pump_speed_scaled")
@@ -316,7 +324,7 @@ def make_collector_exit_temps_and_pump_power_function(
     solar_rate = cas.SX.sym("solar_rate")
 
     pressure_balance_function = make_pressure_balance_function(
-        n_lines, m_pumps, sum=sum, sqrt=sqrt
+        n_lines, m_pumps
     )
 
     # Make rootfinder to solve pressure balance
@@ -330,10 +338,11 @@ def make_collector_exit_temps_and_pump_power_function(
     loop_dp = sol_rf["x"]
 
     collector_flow_rates = calculate_collector_flow_rate(
-        valve_positions, loop_dp, sqrt=sqrt
+        valve_positions,
+        loop_dp,
     )
 
-    total_flow_rate = sum(collector_flow_rates)
+    total_flow_rate = cas.sum(collector_flow_rates)
 
     actual_pump_speed = actual_pump_speed_from_scaled(pump_speed_scaled)
 
@@ -353,8 +362,6 @@ def make_collector_exit_temps_and_pump_power_function(
         ambient_temp,
         solar_rate,
         LOOP_THERMAL_EFFICIENCIES,
-        exp=exp,
-        pi=pi,
     )
 
     return cas.Function(
@@ -385,7 +392,7 @@ def make_collector_exit_temps_and_pump_power_function(
 
 def calculate_dtlm_hx1(
     T1,
-    T_forecast=T_FORECAST,
+    mixed_oil_exit_temp,
     T_steam_sp=BOILER_T_STEAM_SP,
     T_boil=BOILER_T_BOIL,
     log=cas.log,
@@ -394,8 +401,8 @@ def calculate_dtlm_hx1(
     Calculate log mean temperature difference, HX1
     Excel BM31: =(($AJ$25-$BP$1)-(BH31-$BP$2))/LN(($AJ$25-$BP$1)/(BH31-$BP$2))
     """
-    dtlm = ((T_forecast - T_steam_sp) - (T1 - T_boil)) / log(
-        (T_forecast - T_steam_sp) / (T1 - T_boil)
+    dtlm = ((mixed_oil_exit_temp - T_steam_sp) - (T1 - T_boil)) / log(
+        (mixed_oil_exit_temp - T_steam_sp) / (T1 - T_boil)
     )
     return dtlm
 
@@ -443,9 +450,12 @@ def calculate_actual_heat_transfer_coefficient(
 
 
 def calculate_Q_dot_hx1(
-    m_dot, cp_steam=CP_STEAM, T_sp=BOILER_T_STEAM_SP, T_boil=BOILER_T_BOIL
+    m_dot,
+    cp_steam=CP_STEAM,
+    T_steam_sp=BOILER_T_STEAM_SP,
+    T_boil=BOILER_T_BOIL,
 ):
-    Q_dot = m_dot * cp_steam * (T_sp - T_boil)
+    Q_dot = m_dot * cp_steam * (T_steam_sp - T_boil)
     return Q_dot
 
 
@@ -465,13 +475,60 @@ def calculate_hx_area(Q_dot, dtlm, U):
     return Q_dot / (dtlm * U)
 
 
-def heat_exchanger_solution_error(
+def calculate_T1(
+    m_dot,
+    mixed_oil_exit_temp,
+    oil_flow_rate,
+    cp_steam=CP_STEAM,
+    T_steam_sp=BOILER_T_STEAM_SP,
+    T_boil=BOILER_T_BOIL,
+    oil_rho_cp=OIL_RHO_CP,
+):
+    """
+    Excel BH31: =$AJ$25-BG31*$BG$3*($BP$1-$BP$2)/(($AD$23/3600)*$AO$4)
+    """
+    T1 = mixed_oil_exit_temp - m_dot * cp_steam * (T_steam_sp - T_boil) / (
+        (oil_flow_rate / 3600.0) * oil_rho_cp
+    )
+    return T1
+
+
+def calculate_T2(
     m_dot,
     T1,
-    T2,
-    Tr,
     oil_flow_rate,
-    T_forecast=T_FORECAST,
+    h_vap=H_VAP,
+    oil_rho_cp=OIL_RHO_CP,
+):
+    """
+    Excel BI31: =BH31-BG31*$AO$5/(($AD$23/3600)*$AO$4)
+    """
+    T2 = T1 - m_dot * h_vap / ((oil_flow_rate / 3600.0) * oil_rho_cp)
+    return T2
+
+
+def calculate_oil_return_temp(
+    m_dot,
+    T2,
+    oil_flow_rate,
+    cp_water=CP_WATER,
+    T_boil=BOILER_T_BOIL,
+    T_condensate=BOILER_T_CONDENSATE,
+    oil_rho_cp=OIL_RHO_CP,
+):
+    """
+    Excel BJ31: =BI31-BG31*($BG$4*($BP$2-$BP$3))/(($AD$23/3600)*$AO$4)
+    """
+    oil_return_temp = T2 - m_dot * (cp_water * (T_boil - T_condensate)) / (
+        (oil_flow_rate / 3600.0) * oil_rho_cp
+    )
+    return oil_return_temp
+
+
+def heat_exchanger_solution_error(
+    m_dot,
+    oil_flow_rate,
+    mixed_oil_exit_temp,
     T_steam_sp=BOILER_T_STEAM_SP,
     U_steam=HX3_U_STEAM,
     U_boil=HX2_U_BOIL,
@@ -482,6 +539,7 @@ def heat_exchanger_solution_error(
     T_boil=BOILER_T_BOIL,
     T_condensate=BOILER_T_CONDENSATE,
     cp_steam=CP_STEAM,
+    oil_rho_cp=OIL_RHO_CP,
     h_vap=H_VAP,
     log=cas.log,
 ):
@@ -498,7 +556,7 @@ def heat_exchanger_solution_error(
         T2: Oil temperature between HX2 and HX3 (deg C)
         Tr: Oil return temperature (deg C)
         oil_flow_rate: Thermal oil flow rate (kg/s)
-        T_forecast: Forecast oil exit temperature (deg C)
+        mixed_oil_exit_temp: mixed oil exit temperature (deg C)
         T_steam_sp: Steam setpoint temperature (deg C)
         U_steam: Nominal heat transfer coefficient for steam (W/m^2-K)
         U_boil: Nominal heat transfer coefficient for boiling (W/m^2-K)
@@ -516,10 +574,38 @@ def heat_exchanger_solution_error(
         Error value (zero when sum of areas equals total available area)
     """
 
+    T1 = calculate_T1(
+        m_dot,
+        mixed_oil_exit_temp,
+        oil_flow_rate,
+        cp_steam=cp_steam,
+        T_steam_sp=T_steam_sp,
+        T_boil=T_boil,
+        oil_rho_cp=oil_rho_cp,
+    )
+
+    T2 = calculate_T2(
+        m_dot,
+        T1,
+        oil_flow_rate,
+        h_vap=h_vap,
+        oil_rho_cp=oil_rho_cp,
+    )
+
+    Tr = calculate_oil_return_temp(
+        m_dot,
+        T2,
+        oil_flow_rate,
+        cp_water=cp_water,
+        T_boil=T_boil,
+        T_condensate=T_condensate,
+        oil_rho_cp=oil_rho_cp,
+    )
+
     # Calculate log mean temperature differences
     dtlm_hx1 = calculate_dtlm_hx1(
         T1,
-        T_forecast=T_forecast,
+        mixed_oil_exit_temp,
         T_steam_sp=T_steam_sp,
         T_boil=T_boil,
         log=log,
@@ -542,7 +628,7 @@ def heat_exchanger_solution_error(
 
     # Calculate heat transfer rates
     Q_dot_hx1 = calculate_Q_dot_hx1(
-        m_dot, cp_steam=cp_steam, T_sp=T_steam_sp, T_boil=T_boil
+        m_dot, cp_steam=cp_steam, T_steam_sp=T_steam_sp, T_boil=T_boil
     )
     Q_dot_hx2 = calculate_Q_dot_hx2(m_dot, h_vap=h_vap)
     Q_dot_hx3 = calculate_Q_dot_hx3(
@@ -572,13 +658,66 @@ def heat_exchanger_solution_error(
     return hx_area - hx1_area - hx2_area - hx3_area
 
 
+def calculate_steam_power(m_dot):
+    """Calculate steam power (kW).
+    Excel BI33.
+    """
+    return m_dot * (3049.0 - 2207.0)
+
+
 def calculate_net_power(
     steam_power, pump_fluid_power, pump_and_drive_efficiency
 ):
-    """Calculate net power output from steam power and pump power."""
+    """Calculate net power output from steam power and pump power.
+    Excel BI37: =BI33*BI34-BI35/BI36
+    """
     return (
         steam_power * GENERATOR_EFFICIENCY
         - pump_fluid_power / pump_and_drive_efficiency
+    )
+
+
+def make_calculate_m_dot():
+    """Create a CasADi function for power generator net power production
+    and oil return temperature.
+    """
+    oil_flow_rate = cas.SX.sym("oil_flow_rate")
+    mixed_oil_exit_temp = cas.SX.sym("mixed_oil_exit_temp")
+    m_dot = cas.SX.sym("m_dot")
+
+    # Make rootfinder to solve pressure balance
+    x = m_dot
+    p = cas.vertcat(oil_flow_rate)
+    residual = heat_exchanger_solution_error(
+        x,
+        oil_flow_rate,
+        mixed_oil_exit_temp,
+        T_steam_sp=BOILER_T_STEAM_SP,
+        U_steam=HX3_U_STEAM,
+        U_boil=HX2_U_BOIL,
+        U_liquid=HX1_U_LIQUID,
+        hx_area=HX_AREA,
+        F_oil_nominal=F_OIL_NOMINAL,
+        cp_water=CP_WATER,
+        T_boil=BOILER_T_BOIL,
+        T_condensate=BOILER_T_CONDENSATE,
+        cp_steam=CP_STEAM,
+        oil_rho_cp=OIL_RHO_CP,
+        h_vap=H_VAP,
+        log=cas.log,
+    )
+    rf = cas.rootfinder("RF", "newton", {"x": x, "p": p, "g": residual})
+
+    # Root finder solution
+    sol_rf = rf(x0=[30.0], p=p)
+    m_dot_sol = sol_rf["x"]
+
+    return cas.Function(
+        "calculate_m_dot",
+        [oil_flow_rate, mixed_oil_exit_temp],
+        [m_dot_sol],
+        ["oil_flow_rate", "mixed_oil_exit_temp"],
+        ["m_dot"],
     )
 
 

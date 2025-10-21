@@ -19,12 +19,15 @@ from problems.solar_plant_rto.solar_plant_gen_rto import (
     calculate_collector_flow_rate,
     calculate_collector_oil_exit_temp,
     calculate_net_power,
+    calculate_oil_return_temp,
     calculate_pressure_balance,
     calculate_pump_and_drive_efficiency,
     calculate_pump_dp,
     calculate_pump_fluid_power,
     calculate_rms_oil_exit_temps,
-    calculate_total_flowrate,
+    calculate_T1,
+    calculate_T2,
+    calculate_total_oil_flowrate,
     heat_exchanger_solution_error,
     make_calculate_pump_and_drive_power_function,
     make_collector_exit_temps_and_pump_power_function,
@@ -124,8 +127,7 @@ test_data = {
         ]
     ),
     "rms_dev": 4.999893601,  # ✓
-    "T_oil_mixed": 389.9992819,
-    "T_forecast": 394.9751366,
+    "mixed_oil_exit_temp": 394.9751366,  # ✓ (T_forecast in spreadsheet)
     "m_dot": 1.327844026,
     "T1": 389.7123306,
     "T2": 310.2604821,
@@ -181,11 +183,11 @@ class TestPumpAndFlowCalculations:
             collector_flow_rate, test_data["collector_flow_rates"][1]
         )
 
-    def test_calculate_total_flowrate(self):  # ✓
+    def test_calculate_total_oil_flowrate(self):  # ✓
         """Test total flow rate calculation."""
         valve_positions = test_data["valve_positions"]
         loop_dp = test_data["loop_dp"]
-        total_flowrate = calculate_total_flowrate(
+        total_flowrate = calculate_total_oil_flowrate(
             valve_positions, loop_dp, sum=np.sum, sqrt=np.sqrt
         )
         assert np.isclose(total_flowrate, test_data["total_flow_rate"])
@@ -220,7 +222,7 @@ class TestPumpAndFlowCalculations:
         """Test pump and drive efficiency and power calculations."""
         valve_positions = test_data["valve_positions"]
         loop_dp = test_data["loop_dp"]
-        total_flow_rate = calculate_total_flowrate(
+        total_flow_rate = calculate_total_oil_flowrate(
             valve_positions, loop_dp, sum=np.sum, sqrt=np.sqrt
         )
         assert np.isclose(total_flow_rate, test_data["total_flow_rate"])
@@ -374,14 +376,38 @@ class TestCasADiFunctions:
 class TestSteamGeneratorModel:
     """Tests for steam generator model functions."""
 
+    def test_calculate_T1(self):
+        """Test oil temperature T1 calculation (entering HX1)."""
+        m_dot = test_data["m_dot"]
+        mixed_oil_exit_temp = test_data["mixed_oil_exit_temp"]
+        oil_flow_rate = test_data["total_flow_rate"]
+        T1 = calculate_T1(m_dot, mixed_oil_exit_temp, oil_flow_rate)
+        assert np.isclose(T1, test_data["T1"])
+
+    def test_calculate_T2(self):
+        """Test oil temperature T2 calculation (between HX2 and HX3)."""
+        m_dot = test_data["m_dot"]
+        T1 = test_data["T1"]
+        oil_flow_rate = test_data["total_flow_rate"]
+        T2 = calculate_T2(m_dot, T1, oil_flow_rate)
+        assert np.isclose(T2, test_data["T2"])
+
+    def test_calculate_oil_return_temp(self):
+        """Test oil return temperature calculation (Tr)."""
+        m_dot = test_data["m_dot"]
+        T2 = test_data["T2"]
+        oil_flow_rate = test_data["total_flow_rate"]
+        Tr = calculate_oil_return_temp(m_dot, T2, oil_flow_rate)
+        assert np.isclose(Tr, test_data["Tr"])
+
     def test_heat_exchanger_solution_error(self):
         """Test heat exchanger area constraint error calculation."""
         m_dot = test_data["m_dot"]
-        T1 = test_data["T1"]
-        T2 = test_data["T2"]
-        Tr = test_data["Tr"]
         oil_flow_rate = test_data["total_flow_rate"]
-        error = heat_exchanger_solution_error(m_dot, T1, T2, Tr, oil_flow_rate)
+        mixed_oil_exit_temp = test_data["mixed_oil_exit_temp"]
+        error = heat_exchanger_solution_error(
+            m_dot, oil_flow_rate, mixed_oil_exit_temp, log=np.log
+        )
         assert np.isclose(error, 0.0, atol=1e-7)
 
     def test_calculate_net_power(self):
