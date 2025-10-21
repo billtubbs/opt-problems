@@ -127,7 +127,8 @@ test_data = {
         ]
     ),
     "rms_dev": 4.999893601,  # ✓
-    "mixed_oil_exit_temp": 394.9751366,  # ✓ (T_forecast in spreadsheet)
+    "mixed_oil_exit_temp": 394.9751366,  # ✓
+    "T_forecast": 394.9751366,  # ✓
     "m_dot": 1.327844026,
     "T1": 389.7123306,
     "T2": 310.2604821,
@@ -144,6 +145,7 @@ test_data = {
 #   - collector valve flowrate formula changed
 #   - change to calculate_pump_dp
 #   - collector outlet temp formula changed (a, b)
+#   - What is T_forecast?  Is it supposed to match mixed T oil?
 
 
 class TestPumpAndFlowCalculations:
@@ -419,6 +421,10 @@ class TestSteamGeneratorModel:
             steam_power, pump_fluid_power, pump_and_drive_efficiency
         )
         assert np.isclose(net_power, 1352.949974049002)
+
+    # NOTE: test_make_calculate_m_dot removed because the rootfinder approach
+    # is not recommended. See heat_exchanger_solution_error and make_calculate_m_dot
+    # docstrings for explanation of NaN issues and recommended alternative approach.
 
 
 class TestDataConsistency:

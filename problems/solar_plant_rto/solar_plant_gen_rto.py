@@ -334,7 +334,7 @@ def make_collector_exit_temps_and_pump_power_function(n_lines, m_pumps):
     rf = cas.rootfinder("RF", "newton", {"x": x, "p": p, "g": residual})
 
     # Root finder solution
-    sol_rf = rf(x0=[30.0], p=p)
+    sol_rf = rf(x0=[2.0], p=p)
     loop_dp = sol_rf["x"]
 
     collector_flow_rates = calculate_collector_flow_rate(
@@ -550,13 +550,43 @@ def heat_exchanger_solution_error(
     2. HX2: Boiling water to steam
     3. HX3: Preheating water from condensate to boiling
 
+    The function calculates the intermediate oil temperatures (T1, T2, Tr)
+    internally based on the input parameters.
+
+    WARNING: This function is difficult to solve with a rootfinder due to NaN
+    regions. The log mean temperature difference (DTLM) calculations contain
+    logarithms that become NaN when temperature differences are non-positive.
+
+    CONSTRAINTS TO AVOID NaN VALUES:
+    The following constraints must be satisfied to avoid NaN in the DTLM calculations:
+
+    For HX1 (calculate_dtlm_hx1):
+        - mixed_oil_exit_temp > T_steam_sp (default: > 385°C)
+        - T1 > T_boil (default: > 310°C)
+
+    For HX2 (calculate_dtlm_hx2):
+        - T1 > T2
+        - T1 > T_boil (default: > 310°C)
+        - T2 > T_boil (default: > 310°C)  <-- CRITICAL: often violated at high m_dot
+
+    For HX3 (calculate_dtlm_hx3):
+        - T2 > T_boil (default: > 310°C)
+        - Tr > T_condensate (default: > 60°C)
+
+    The most common violation is T2 < T_boil, which occurs when m_dot is too large
+    relative to the available heat transfer area. This typically happens during
+    rootfinding when the solver tries values of m_dot > ~1.35 kg/s (depends on
+    operating conditions).
+
+    RECOMMENDED APPROACH:
+    Instead of using a rootfinder, solve for m_dot as part of the global optimization
+    problem with explicit bounds on m_dot or by adding the above constraints directly
+    to the optimization formulation.
+
     Args:
         m_dot: Mass flow rate of water/steam (kg/s)
-        T1: Oil temperature entering HX1 (deg C)
-        T2: Oil temperature between HX2 and HX3 (deg C)
-        Tr: Oil return temperature (deg C)
-        oil_flow_rate: Thermal oil flow rate (kg/s)
-        mixed_oil_exit_temp: mixed oil exit temperature (deg C)
+        oil_flow_rate: Thermal oil flow rate (m^3/h)
+        mixed_oil_exit_temp: Mixed oil exit temperature from collectors (deg C)
         T_steam_sp: Steam setpoint temperature (deg C)
         U_steam: Nominal heat transfer coefficient for steam (W/m^2-K)
         U_boil: Nominal heat transfer coefficient for boiling (W/m^2-K)
@@ -567,6 +597,7 @@ def heat_exchanger_solution_error(
         T_boil: Boiling temperature (deg C)
         T_condensate: Condensate temperature (deg C)
         cp_steam: Specific heat capacity of steam (kJ/kg-K)
+        oil_rho_cp: Oil volumetric heat capacity (kJ/m^3-K)
         h_vap: Heat of vaporization (kJ/kg)
         log: Logarithm function (for CasADi compatibility)
 
@@ -678,18 +709,33 @@ def calculate_net_power(
 
 
 def make_calculate_m_dot():
-    """Create a CasADi function for power generator net power production
-    and oil return temperature.
+    """Create a CasADi function for calculating steam mass flow rate.
+
+    WARNING: This function uses a rootfinder to solve heat_exchanger_solution_error
+    for m_dot. This approach is NOT RECOMMENDED due to numerical issues - the residual
+    function contains NaN regions that cause the rootfinder to fail (see detailed
+    explanation in heat_exchanger_solution_error docstring).
+
+    RECOMMENDED ALTERNATIVE:
+    Instead of using this function, solve for m_dot as a decision variable in the
+    global optimization problem, with constraints:
+        - m_dot > 0.1 (reasonable lower bound)
+        - T2 > T_boil (e.g., T2 > 310°C) to avoid NaN in DTLM calculations
+        - heat_exchanger_solution_error(...) == 0 (area constraint)
+
+    This function is kept for reference but should not be used in production code.
     """
-    oil_flow_rate = cas.SX.sym("oil_flow_rate")
-    mixed_oil_exit_temp = cas.SX.sym("mixed_oil_exit_temp")
+
+    # Unknown
     m_dot = cas.SX.sym("m_dot")
 
-    # Make rootfinder to solve pressure balance
-    x = m_dot
-    p = cas.vertcat(oil_flow_rate)
+    # Knowns
+    oil_flow_rate = cas.SX.sym("oil_flow_rate")
+    mixed_oil_exit_temp = cas.SX.sym("mixed_oil_exit_temp")
+
+    # Set everything else to defaults
     residual = heat_exchanger_solution_error(
-        x,
+        m_dot,
         oil_flow_rate,
         mixed_oil_exit_temp,
         T_steam_sp=BOILER_T_STEAM_SP,
@@ -706,10 +752,21 @@ def make_calculate_m_dot():
         h_vap=H_VAP,
         log=cas.log,
     )
-    rf = cas.rootfinder("RF", "newton", {"x": x, "p": p, "g": residual})
+
+    # Make rootfinder to solve heat exchanger area constraint
+    x = m_dot
+    p = cas.vertcat(oil_flow_rate, mixed_oil_exit_temp)
+
+    # Use kinsol solver which is more robust for this type of problem
+    opts = {
+        'abstol': 1e-8,
+        'max_iter': 100
+    }
+    rf = cas.rootfinder("RF", "kinsol", {"x": x, "p": p, "g": residual}, opts)
 
     # Root finder solution
-    sol_rf = rf(x0=[30.0], p=p)
+    # Initial guess must be low enough to keep T2 > T_boil (310°C)
+    sol_rf = rf(x0=[0.5], p=p)
     m_dot_sol = sol_rf["x"]
 
     return cas.Function(
