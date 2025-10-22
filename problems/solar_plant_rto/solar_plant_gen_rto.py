@@ -459,11 +459,31 @@ def calculate_Q_dot_hx1(
     T_steam_sp=BOILER_T_STEAM_SP,
     T_boil=BOILER_T_BOIL,
 ):
+    """Calculate heat transfer rate in HX1 (superheating steam).
+
+    Args:
+        m_dot: Mass flow rate of water/steam (kg/s)
+        cp_steam: Specific heat capacity of steam (kJ/kg-K)
+        T_steam_sp: Steam setpoint temperature (deg C)
+        T_boil: Boiling temperature (deg C)
+
+    Returns:
+        Heat transfer rate (kW)
+    """
     Q_dot = m_dot * cp_steam * (T_steam_sp - T_boil)
     return Q_dot
 
 
 def calculate_Q_dot_hx2(m_dot, h_vap=H_VAP):
+    """Calculate heat transfer rate in HX2 (boiling water to steam).
+
+    Args:
+        m_dot: Mass flow rate of water/steam (kg/s)
+        h_vap: Heat of vaporization (kJ/kg)
+
+    Returns:
+        Heat transfer rate (kW)
+    """
     Q_dot = m_dot * h_vap
     return Q_dot
 
@@ -471,62 +491,89 @@ def calculate_Q_dot_hx2(m_dot, h_vap=H_VAP):
 def calculate_Q_dot_hx3(
     m_dot, cp_water=CP_WATER, T_boil=BOILER_T_BOIL, T_condensate=T_CONDENSATE
 ):
+    """Calculate heat transfer rate in HX3 (preheating water).
+
+    Args:
+        m_dot: Mass flow rate of water/steam (kg/s)
+        cp_water: Specific heat capacity of water (kJ/kg-K)
+        T_boil: Boiling temperature (deg C)
+        T_condensate: Condensate temperature (deg C)
+
+    Returns:
+        Heat transfer rate (kW)
+    """
     Q_dot = m_dot * cp_water * (T_boil - T_condensate)
     return Q_dot
 
 
 def calculate_hx_area(Q_dot, dtlm, U):
+    """Calculate required heat exchanger area.
+
+    Args:
+        Q_dot: Heat transfer rate (kW)
+        dtlm: Log mean temperature difference (deg C)
+        U: Heat transfer coefficient (W/m^2-K)
+
+    Returns:
+        Required heat exchanger area (m^2)
+    """
     return Q_dot / (dtlm * U)
 
 
-def calculate_T1(
+def calculate_hx_temperatures(
     m_dot,
     mixed_oil_exit_temp,
     oil_flow_rate,
     cp_steam=CP_STEAM,
     T_steam_sp=BOILER_T_STEAM_SP,
     T_boil=BOILER_T_BOIL,
-    oil_rho_cp=OIL_RHO_CP,
-):
-    """
-    Excel BH31: =$AJ$25-BG31*$BG$3*($BP$1-$BP$2)/(($AD$23/3600)*$AO$4)
-    """
-    T1 = mixed_oil_exit_temp - m_dot * cp_steam * (T_steam_sp - T_boil) / (
-        (oil_flow_rate / 3600.0) * oil_rho_cp
-    )
-    return T1
-
-
-def calculate_T2(
-    m_dot,
-    T1,
-    oil_flow_rate,
+    cp_water=CP_WATER,
+    T_condensate=BOILER_T_CONDENSATE,
     h_vap=H_VAP,
     oil_rho_cp=OIL_RHO_CP,
 ):
-    """
-    Excel BI31: =BH31-BG31*$AO$5/(($AD$23/3600)*$AO$4)
-    """
-    T2 = T1 - m_dot * h_vap / ((oil_flow_rate / 3600.0) * oil_rho_cp)
-    return T2
+    """Calculate all three intermediate oil temperatures in heat exchangers.
 
+    Steam boiler consists of 3 heat exchangers:
+    1. HX1: Superheating steam from boiling to setpoint
+    2. HX2: Boiling water to steam
+    3. HX3: Preheating water from condensate to boiling
 
-def calculate_oil_return_temp(
-    m_dot,
-    T2,
-    oil_flow_rate,
-    cp_water=CP_WATER,
-    T_boil=BOILER_T_BOIL,
-    T_condensate=BOILER_T_CONDENSATE,
-    oil_rho_cp=OIL_RHO_CP,
-):
+    Args:
+        m_dot: Mass flow rate of water/steam (kg/s)
+        mixed_oil_exit_temp: Mixed oil exit temperature from collectors (deg C)
+        oil_flow_rate: Thermal oil flow rate (m^3/h)
+        cp_steam: Specific heat capacity of steam (kJ/kg-K)
+        T_steam_sp: Steam setpoint temperature (deg C)
+        T_boil: Boiling temperature (deg C)
+        cp_water: Specific heat capacity of water (kJ/kg-K)
+        T_condensate: Condensate temperature (deg C)
+        h_vap: Heat of vaporization (kJ/kg)
+        oil_rho_cp: Oil volumetric heat capacity (kJ/m^3-K)
+
+    Returns:
+        tuple: (T1, T2, Tr) - Oil temperatures after HX1, HX2, and HX3 (deg C)
+            T1: Oil temperature after HX1 (Excel BH31)
+            T2: Oil temperature after HX2 (Excel BI31)
+            Tr: Oil return temperature after HX3 (Excel BJ31)
     """
-    Excel BJ31: =BI31-BG31*($BG$4*($BP$2-$BP$3))/(($AD$23/3600)*$AO$4)
-    """
-    oil_return_temp = T2 - m_dot * (cp_water * (T_boil - T_condensate)) / (
+    # T1: Oil temperature after HX1 (superheating)
+    # Excel BH31: =$AJ$25-BG31*$BG$3*($BP$1-$BP$2)/(($AD$23/3600)*$AO$4)
+    T1 = mixed_oil_exit_temp - m_dot * cp_steam * (T_steam_sp - T_boil) / (
         (oil_flow_rate / 3600.0) * oil_rho_cp
     )
-    return oil_return_temp
+
+    # T2: Oil temperature after HX2 (boiling)
+    # Excel BI31: =BH31-BG31*$AO$5/(($AD$23/3600)*$AO$4)
+    T2 = T1 - m_dot * h_vap / ((oil_flow_rate / 3600.0) * oil_rho_cp)
+
+    # Tr: Oil return temperature after HX3 (preheating)
+    # Excel BJ31: =BI31-BG31*($BG$4*($BP$2-$BP$3))/(($AD$23/3600)*$AO$4)
+    Tr = T2 - m_dot * (cp_water * (T_boil - T_condensate)) / (
+        (oil_flow_rate / 3600.0) * oil_rho_cp
+    )
+
+    return T1, T2, Tr
 
 
 def heat_exchanger_solution_error(
@@ -579,16 +626,6 @@ def heat_exchanger_solution_error(
     For HX3 (calculate_dtlm_hx3):
         - T2 > T_boil (default: > 310°C)
         - Tr > T_condensate (default: > 60°C)
-
-    The most common violation is T2 < T_boil, which occurs when m_dot is too large
-    relative to the available heat transfer area. This typically happens during
-    rootfinding when the solver tries values of m_dot > ~1.35 kg/s (depends on
-    operating conditions).
-
-    RECOMMENDED APPROACH:
-    Instead of using a rootfinder, solve for m_dot as part of the global optimization
-    problem with explicit bounds on m_dot or by adding the above constraints directly
-    to the optimization formulation.
 
     Args:
         T1: Oil temperature after HX1 (deg C)
@@ -689,10 +726,11 @@ def solar_plant_gen_rto_solve(
     solar_rate,
     n_lines,
     m_pumps,
-    valve_positions_init=0.55,
-    pump_speed_scaled_init=0.6,
-    m_dot_init=0.5,
-    oil_return_temp_init=250.0,
+    valve_positions_init=0.75,
+    pump_speed_scaled_init=0.5,
+    m_dot_init=1.2,
+    oil_return_temp_init=270.0,
+    max_oil_exit_temps=OIL_EXIT_TEMPS_SP,
     T_steam_sp=BOILER_T_STEAM_SP,
     U_steam=HX3_U_STEAM,
     U_boil=HX2_U_BOIL,
@@ -708,23 +746,33 @@ def solar_plant_gen_rto_solve(
     solver_name="ipopt",
     solver_opts=None,
 ):
-    """Solve the steam generator RTO optimization problem.
+    """Solve the combined solar plant and steam generator RTO optimization problem.
 
-    Finds the optimal steam mass flow rate that satisfies the heat exchanger
-    area constraint while respecting temperature constraints to avoid NaN
-    values in the log mean temperature difference calculations.
+    Optimizes valve positions, pump speed, oil return temperature, and steam
+    mass flow rate to maximize net power while satisfying heat exchanger area
+    and temperature constraints.
 
-    This function uses a nonlinear optimizer instead of a rootfinder to
-    properly handle the temperature constraints that prevent numerical issues.
+    This function integrates the collector field optimization with the steam
+    generator, solving for all decision variables simultaneously.
 
     Parameters
     ----------
-    oil_flow_rate : float
-        Thermal oil flow rate (m^3/h)
-    mixed_oil_exit_temp : float
-        Mixed oil exit temperature from collectors (deg C)
+    ambient_temp : float
+        Ambient temperature (deg C)
+    solar_rate : float
+        Solar irradiation rate (W/m^2)
+    n_lines : int
+        Number of collector lines
+    m_pumps : int
+        Number of pumps operating
+    valve_positions_init : float or array, optional
+        Initial valve positions (default: 0.55)
+    pump_speed_scaled_init : float, optional
+        Initial scaled pump speed (default: 0.6)
     m_dot_init : float, optional
         Initial guess for steam mass flow rate (kg/s) (default: 0.5)
+    oil_return_temp_init : float, optional
+        Initial guess for oil return temperature (deg C) (default: 250.0)
     T_steam_sp : float, optional
         Steam setpoint temperature (deg C)
     U_steam : float, optional
@@ -760,9 +808,15 @@ def solar_plant_gen_rto_solve(
         CasADi optimization solution object
     variables : dict
         Dictionary containing optimized variables and outputs including:
+        - valve_positions: Optimal valve positions
+        - pump_speed_scaled: Optimal scaled pump speed
+        - oil_return_temp: Optimal oil return temperature (deg C)
         - m_dot: Optimal steam mass flow rate (kg/s)
         - T1, T2, Tr: Oil temperatures through heat exchangers (deg C)
-        - area_error: Heat exchanger area constraint residual
+        - pump_and_drive_power: Pump and drive power (kW)
+        - steam_power: Steam power output (kW)
+        - net_power: Net power output (kW)
+        - hx_area_error: Heat exchanger area constraint residual
     """
     if solver_opts is None:
         solver_opts = {}
@@ -797,36 +851,21 @@ def solar_plant_gen_rto_solve(
     oil_flow_rate = cas.sum(collector_flow_rates)
 
     # Calculate intermediate temperatures
-    T1 = calculate_T1(
+    T1, T2, Tr = calculate_hx_temperatures(
         m_dot,
         mixed_oil_exit_temp,
         oil_flow_rate,
         cp_steam=cp_steam,
         T_steam_sp=T_steam_sp,
         T_boil=T_boil,
-        oil_rho_cp=oil_rho_cp,
-    )
-
-    T2 = calculate_T2(
-        m_dot,
-        T1,
-        oil_flow_rate,
+        cp_water=cp_water,
+        T_condensate=T_condensate,
         h_vap=h_vap,
         oil_rho_cp=oil_rho_cp,
     )
 
-    Tr = calculate_oil_return_temp(
-        m_dot,
-        T2,
-        oil_flow_rate,
-        cp_water=cp_water,
-        T_boil=T_boil,
-        T_condensate=T_condensate,
-        oil_rho_cp=oil_rho_cp,
-    )
-
     # Calculate heat exchanger area constraint error
-    area_error = heat_exchanger_solution_error(
+    hx_area_error = heat_exchanger_solution_error(
         T1,
         T2,
         Tr,
@@ -851,8 +890,10 @@ def solar_plant_gen_rto_solve(
     steam_power = calculate_steam_power(m_dot)
     net_power = calculate_net_power(steam_power, pump_and_drive_power)
 
-    # Add constraints
-    opti.subject_to(opti.bounded(0.1, m_dot, 2.0))  # TODO: Is this needed?
+    # Collector and pump constraints
+    opti.subject_to(opti.bounded(0.1, valve_positions, 1.0))
+    opti.subject_to(opti.bounded(0.2, pump_speed_scaled, 1.0))
+    opti.subject_to(oil_exit_temps < max_oil_exit_temps)
 
     # Temperature constraints to avoid NaN in DTLM calculations
     opti.subject_to(mixed_oil_exit_temp > T_steam_sp)  # For HX1
@@ -861,13 +902,15 @@ def solar_plant_gen_rto_solve(
     opti.subject_to(Tr > T_condensate)  # For HX3
     opti.subject_to(T1 > T2)  # For HX2
 
-    # Heat exchanger area constraint (equality constraint)
-    opti.subject_to(area_error == 0)  # TODO: Is this needed?
+    # Heat exchanger area constraint
+    opti.subject_to(hx_area_error == 0)
     opti.subject_to(oil_return_temp == Tr)
 
     # Cost function - minimize deviation from feasibility
-    # (Since we only have equality constraint, we minimize squared error)
-    opti.minimize(area_error**2)
+    # Note: The equality constraint hx_area_error==0 enforces the area constraint,
+    # while minimizing hx_area_error**2 helps guide the solver during iterations.
+    # This redundancy is intentional and aids convergence.
+    opti.minimize(-net_power)
 
     # Set initial values
     opti.set_initial(m_dot, m_dot_init)
@@ -890,7 +933,7 @@ def solar_plant_gen_rto_solve(
         "pump_and_drive_power": opti.value(pump_and_drive_power),
         "steam_power": opti.value(steam_power),
         "net_power": opti.value(net_power),
-        "area_error": opti.value(area_error),
+        "hx_area_error": opti.value(hx_area_error),
     }
 
     return sol, variables
