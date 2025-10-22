@@ -621,7 +621,7 @@ def heat_exchanger_solution_error(
     For HX2 (calculate_dtlm_hx2):
         - T1 > T2
         - T1 > T_boil (default: > 310°C)
-        - T2 > T_boil (default: > 310°C)  <-- CRITICAL: often violated at high m_dot
+        - T2 > T_boil (default: > 310°C)  <-- may be violated at high m_dot
 
     For HX3 (calculate_dtlm_hx3):
         - T2 > T_boil (default: > 310°C)
@@ -746,7 +746,8 @@ def solar_plant_gen_rto_solve(
     solver_name="ipopt",
     solver_opts=None,
 ):
-    """Solve the combined solar plant and steam generator RTO optimization problem.
+    """Solve the combined solar plant and steam generator RTO optimization
+    problem.
 
     Optimizes valve positions, pump speed, oil return temperature, and steam
     mass flow rate to maximize net power while satisfying heat exchanger area
@@ -766,13 +767,15 @@ def solar_plant_gen_rto_solve(
     m_pumps : int
         Number of pumps operating
     valve_positions_init : float or array, optional
-        Initial valve positions (default: 0.55)
+        Initial valve positions (default: 0.75)
     pump_speed_scaled_init : float, optional
-        Initial scaled pump speed (default: 0.6)
+        Initial scaled pump speed (default: 0.5)
     m_dot_init : float, optional
-        Initial guess for steam mass flow rate (kg/s) (default: 0.5)
+        Initial guess for steam mass flow rate (kg/s) (default: 1.2)
     oil_return_temp_init : float, optional
-        Initial guess for oil return temperature (deg C) (default: 250.0)
+        Initial guess for oil return temperature (deg C) (default: 270.0)
+    max_oil_exit_temps : float or array, optional
+        Maximum oil exit temperatures for each line (deg C)
     T_steam_sp : float, optional
         Steam setpoint temperature (deg C)
     U_steam : float, optional
@@ -906,10 +909,7 @@ def solar_plant_gen_rto_solve(
     opti.subject_to(hx_area_error == 0)
     opti.subject_to(oil_return_temp == Tr)
 
-    # Cost function - minimize deviation from feasibility
-    # Note: The equality constraint hx_area_error==0 enforces the area constraint,
-    # while minimizing hx_area_error**2 helps guide the solver during iterations.
-    # This redundancy is intentional and aids convergence.
+    # Cost function - maximize net power generation
     opti.minimize(-net_power)
 
     # Set initial values
@@ -956,19 +956,20 @@ def solar_plant_rto_solve(
     solver_name="ipopt",
     solver_opts=None,
 ):
-    """Solve the solar plant RTO optimization problem.
+    """Solve the solar plant RTO optimization problem (collector field only).
 
     Maximizes net potential energy generation by optimizing valve positions
-    and pump speed subject to temperature and equipment constraints.
+    and pump speed subject to temperature and equipment constraints. This
+    function optimizes only the collector field without the steam generator.
 
     Parameters
     ----------
     solar_rate : float
         Solar irradiation rate (W/m^2)
     ambient_temp : float
-        Ambient temperature (°C)
+        Ambient temperature (deg C)
     oil_return_temp : float
-        Oil return temperature (°C)
+        Oil return temperature (deg C)
     m_pumps : int
         Number of pumps operating
     n_lines : int
@@ -978,7 +979,7 @@ def solar_plant_rto_solve(
     pump_speed_scaled_init : float, optional
         Initial scaled pump speed (default: 0.6)
     max_oil_exit_temps : list or array, optional
-        Maximum oil exit temperatures for each line
+        Maximum oil exit temperatures for each line (deg C)
     solver_name : str, optional
         Name of the optimizer (default: 'ipopt')
     solver_opts : dict, optional
@@ -989,7 +990,16 @@ def solar_plant_rto_solve(
     sol : OptiSol
         CasADi optimization solution object
     variables : dict
-        Dictionary containing optimized variables and outputs
+        Dictionary containing optimized variables and outputs including:
+        - valve_positions: Optimal valve positions
+        - oil_exit_temps: Oil exit temperatures for each collector line (deg C)
+        - collector_flow_rates: Flow rates for each collector line (m^3/h)
+        - pump_speed_scaled: Optimal scaled pump speed
+        - pump_and_drive_power: Pump and drive power (kW)
+        - potential_work: Potential work output from Carnot cycle (kW)
+        - f: Objective function value
+        - grad_f: Gradient of objective function
+        - hess_f: Hessian of objective function
     """
     if solver_opts is None:
         solver_opts = {}
