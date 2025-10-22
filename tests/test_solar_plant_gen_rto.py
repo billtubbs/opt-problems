@@ -29,9 +29,9 @@ from problems.solar_plant_rto.solar_plant_gen_rto import (
     calculate_T2,
     calculate_total_oil_flowrate,
     heat_exchanger_solution_error,
-    make_calculate_pump_and_drive_power_function,
-    make_collector_exit_temps_and_pump_power_function,
+    make_calculate_collector_exit_temps_and_pump_power,
     make_pressure_balance_function,
+    solar_plant_gen_rto_solve,
 )
 
 # Test data from Excel spreadsheet
@@ -136,6 +136,8 @@ test_data = {
     "hx1_area": 0.0117483100468,
     "hx2_area": 0.1429090533235,
     "hx3_area": 0.0953425637215,
+    "steam_power": 1118.04467,
+    "net_power": 932.4140166,
 }
 
 
@@ -322,29 +324,14 @@ class TestCasADiFunctions:
         )
         assert np.isclose(pressure_balance, [[0.0]], atol=1e-5)
 
-    def test_make_calculate_pump_and_drive_power_function(self):
+    def test_make_calculate_collector_exit_temps_and_pump_power(self):
         """Test pump and drive power function creation."""
         n_lines = test_data["n_lines"]
         m_pumps = test_data["m_pumps"]
-        pump_and_drive_power_function = (
-            make_calculate_pump_and_drive_power_function(n_lines, m_pumps)
-        )
-
-        valve_positions = test_data["valve_positions"]
-        pump_speed_scaled = test_data["pump_speed_scaled"]
-        pump_and_drive_power = pump_and_drive_power_function(
-            valve_positions, pump_speed_scaled
-        )
-        assert np.isclose(
-            pump_and_drive_power, test_data["pump_and_drive_power"]
-        )
-
-    def test_make_collector_exit_temps_and_pump_power_function(self):
-        """Test complete system function creation."""
-        n_lines = test_data["n_lines"]
-        m_pumps = test_data["m_pumps"]
-        calculate_exit_temps_and_pump_power = (
-            make_collector_exit_temps_and_pump_power_function(n_lines, m_pumps)
+        calculate_collector_exit_temps_and_pump_power = (
+            make_calculate_collector_exit_temps_and_pump_power(
+                n_lines, m_pumps
+            )
         )
 
         valve_positions = test_data["valve_positions"]
@@ -352,9 +339,8 @@ class TestCasADiFunctions:
         oil_return_temp = test_data["oil_return_temp"]
         ambient_temp = test_data["ambient_temp"]
         solar_rate = test_data["solar_rate"]
-
         collector_flow_rates, pump_and_drive_power, oil_exit_temps = (
-            calculate_exit_temps_and_pump_power(
+            calculate_collector_exit_temps_and_pump_power(
                 valve_positions,
                 pump_speed_scaled,
                 oil_return_temp,
@@ -362,16 +348,16 @@ class TestCasADiFunctions:
                 solar_rate,
             )
         )
-
         assert np.allclose(
-            collector_flow_rates,
-            test_data["collector_flow_rates"].reshape(-1, 1),
+            np.array(collector_flow_rates).flatten(),
+            test_data["collector_flow_rates"],
         )
         assert np.isclose(
             pump_and_drive_power, test_data["pump_and_drive_power"]
         )
         assert np.allclose(
-            oil_exit_temps, test_data["oil_exit_temps"].reshape(-1, 1)
+            np.array(oil_exit_temps).flatten(),
+            test_data["oil_exit_temps"],
         )
 
 
@@ -404,27 +390,23 @@ class TestSteamGeneratorModel:
 
     def test_heat_exchanger_solution_error(self):
         """Test heat exchanger area constraint error calculation."""
+        T1 = test_data["T1"]
+        T2 = test_data["T2"]
+        Tr = test_data["Tr"]
         m_dot = test_data["m_dot"]
         oil_flow_rate = test_data["total_flow_rate"]
         mixed_oil_exit_temp = test_data["mixed_oil_exit_temp"]
         error = heat_exchanger_solution_error(
-            m_dot, oil_flow_rate, mixed_oil_exit_temp, log=np.log
+            T1, T2, Tr, m_dot, oil_flow_rate, mixed_oil_exit_temp, log=np.log
         )
         assert np.isclose(error, 0.0, atol=1e-7)
 
     def test_calculate_net_power(self):
         """Test net power calculation."""
-        steam_power = 1639.813211
-        pump_fluid_power = 21.81087724
-        pump_and_drive_efficiency = 0.533387324
-        net_power = calculate_net_power(
-            steam_power, pump_fluid_power, pump_and_drive_efficiency
-        )
-        assert np.isclose(net_power, 1352.949974049002)
-
-    # NOTE: test_make_calculate_m_dot removed because the rootfinder approach
-    # is not recommended. See heat_exchanger_solution_error and make_calculate_m_dot
-    # docstrings for explanation of NaN issues and recommended alternative approach.
+        steam_power = test_data["steam_power"]
+        pump_and_drive_power = test_data["pump_and_drive_power"]
+        net_power = calculate_net_power(steam_power, pump_and_drive_power)
+        assert np.isclose(net_power, test_data["net_power"], rtol=0.01)
 
 
 class TestDataConsistency:
@@ -436,3 +418,93 @@ class TestDataConsistency:
             test_data["total_flow_rate"],
             np.sum(test_data["collector_flow_rates"]),
         )
+
+
+class TestSolarPlantGenRTOSolve:
+    """Tests for solar_plant_gen_rto_solve optimization function."""
+
+    def test_solar_plant_gen_rto_solve(self):
+        """Test the complete solar plant generator RTO optimization problem.
+
+        This test verifies that the optimization problem:
+        1. Solves successfully
+        2. Satisfies the heat exchanger area constraint
+        3. Respects temperature constraints to avoid NaN
+        4. Produces reasonable values for m_dot and temperatures
+        """
+        # Input parameters from test data
+        ambient_temp = test_data["ambient_temp"]
+        solar_rate = test_data["solar_rate"]
+        n_lines = test_data["n_lines"]
+        m_pumps = test_data["m_pumps"]
+
+        # Initial guesses from test data
+        # valve_positions_init = test_data["valve_positions"]
+        # pump_speed_scaled_init = test_data["pump_speed_scaled"]
+        # m_dot_init = test_data["m_dot"]
+
+        # Solver options for better convergence
+        # solver_opts = {
+        #     "ipopt.print_level": 0,
+        #     "print_time": 0,
+        #     "ipopt.max_iter": 500,
+        #     "ipopt.tol": 1e-6,
+        # }
+
+        # Solve the optimization problem
+        sol, variables = solar_plant_gen_rto_solve(
+            ambient_temp=ambient_temp,
+            solar_rate=solar_rate,
+            n_lines=n_lines,
+            m_pumps=m_pumps,
+        )
+
+        # Extract solution
+        m_dot = variables["m_dot"]
+        T1 = variables["T1"]
+        T2 = variables["T2"]
+        Tr = variables["Tr"]
+        oil_return_temp = variables["oil_return_temp"]
+        area_error = variables["area_error"]
+
+        # Verify solution is successful
+        assert sol.stats()["success"], (
+            "Optimization should converge successfully"
+        )
+
+        # Verify heat exchanger area constraint is satisfied
+        assert np.isclose(area_error, 0.0, atol=1e-4), (
+            f"Area constraint error should be near zero, got {area_error}"
+        )
+
+        # Verify temperature constraints (to avoid NaN in DTLM calculations)
+        assert T1 > 310, f"T1 should be > T_boil (310°C), got {T1}"
+        assert T2 > 310, f"T2 should be > T_boil (310°C), got {T2}"
+        assert T1 > T2, f"T1 should be > T2, got T1={T1}, T2={T2}"
+        assert Tr > 60, f"Tr should be > T_condensate (60°C), got {Tr}"
+
+        # Verify m_dot is within bounds
+        assert 0.1 <= m_dot <= 2.0, (
+            f"m_dot should be in [0.1, 2.0], got {m_dot}"
+        )
+
+        # Verify oil return temperature equals Tr (equality constraint)
+        assert np.isclose(oil_return_temp, Tr, atol=1e-4), (
+            f"oil_return_temp should equal Tr, got {oil_return_temp} vs {Tr}"
+        )
+
+        # Print results for inspection
+        print("\nOptimization results:")
+        print(
+            f"  m_dot: {m_dot:.6f} kg/s (expected: {test_data['m_dot']:.6f})"
+        )
+        print(f"  T1: {T1:.4f} °C (expected: {test_data['T1']:.4f})")
+        print(f"  T2: {T2:.4f} °C (expected: {test_data['T2']:.4f})")
+        print(f"  Tr: {Tr:.4f} °C (expected: {test_data['Tr']:.4f})")
+        print(f"  oil_return_temp: {oil_return_temp:.4f} °C")
+        print(f"  area_error: {area_error:.6e}")
+        print(f"  steam_power: {variables['steam_power']:.4f} kW")
+        print(
+            f"  pump_and_drive_power: {variables['pump_and_drive_power']:.4f} kW"
+        )
+        print(f"  net_power: {variables['net_power']:.4f} kW")

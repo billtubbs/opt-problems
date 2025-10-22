@@ -315,31 +315,35 @@ def calculate_rms_oil_exit_temps(
 # TODO: Need to add steam generator to this
 
 
-def make_collector_exit_temps_and_pump_power_function(n_lines, m_pumps):
+def make_calculate_collector_exit_temps_and_pump_power(n_lines, m_pumps):
     """Create a CasADi function for complete system calculation."""
     valve_positions = cas.SX.sym("v", n_lines)
     pump_speed_scaled = cas.SX.sym("pump_speed_scaled")
     oil_return_temp = cas.SX.sym("oil_return_temp")
     ambient_temp = cas.SX.sym("ambient_temp")
     solar_rate = cas.SX.sym("solar_rate")
+    loop_dp = cas.SX.sym("loop_dp")
 
     pressure_balance_function = make_pressure_balance_function(
         n_lines, m_pumps
     )
 
+    residual = pressure_balance_function(
+        valve_positions, pump_speed_scaled, loop_dp
+    )
+
     # Make rootfinder to solve pressure balance
-    x = cas.SX.sym("x")
+    x = loop_dp
     p = cas.vertcat(valve_positions, pump_speed_scaled)
-    residual = pressure_balance_function(valve_positions, pump_speed_scaled, x)
     rf = cas.rootfinder("RF", "newton", {"x": x, "p": p, "g": residual})
 
     # Root finder solution
     sol_rf = rf(x0=[2.0], p=p)
-    loop_dp = sol_rf["x"]
+    loop_dp_sol = sol_rf["x"]
 
     collector_flow_rates = calculate_collector_flow_rate(
         valve_positions,
-        loop_dp,
+        loop_dp_sol,
     )
 
     total_flow_rate = cas.sum(collector_flow_rates)
@@ -526,6 +530,9 @@ def calculate_oil_return_temp(
 
 
 def heat_exchanger_solution_error(
+    T1,
+    T2,
+    Tr,
     m_dot,
     oil_flow_rate,
     mixed_oil_exit_temp,
@@ -539,7 +546,6 @@ def heat_exchanger_solution_error(
     T_boil=BOILER_T_BOIL,
     T_condensate=BOILER_T_CONDENSATE,
     cp_steam=CP_STEAM,
-    oil_rho_cp=OIL_RHO_CP,
     h_vap=H_VAP,
     log=cas.log,
 ):
@@ -550,15 +556,16 @@ def heat_exchanger_solution_error(
     2. HX2: Boiling water to steam
     3. HX3: Preheating water from condensate to boiling
 
-    The function calculates the intermediate oil temperatures (T1, T2, Tr)
-    internally based on the input parameters.
+    The intermediate oil temperatures (T1, T2, Tr) are now passed as arguments
+    rather than being calculated internally.
 
     WARNING: This function is difficult to solve with a rootfinder due to NaN
     regions. The log mean temperature difference (DTLM) calculations contain
     logarithms that become NaN when temperature differences are non-positive.
 
     CONSTRAINTS TO AVOID NaN VALUES:
-    The following constraints must be satisfied to avoid NaN in the DTLM calculations:
+    The following constraints must be satisfied to avoid NaN in the DTLM
+    calculations:
 
     For HX1 (calculate_dtlm_hx1):
         - mixed_oil_exit_temp > T_steam_sp (default: > 385°C)
@@ -584,6 +591,9 @@ def heat_exchanger_solution_error(
     to the optimization formulation.
 
     Args:
+        T1: Oil temperature after HX1 (deg C)
+        T2: Oil temperature after HX2 (deg C)
+        Tr: Oil return temperature after HX3 (deg C)
         m_dot: Mass flow rate of water/steam (kg/s)
         oil_flow_rate: Thermal oil flow rate (m^3/h)
         mixed_oil_exit_temp: Mixed oil exit temperature from collectors (deg C)
@@ -597,41 +607,12 @@ def heat_exchanger_solution_error(
         T_boil: Boiling temperature (deg C)
         T_condensate: Condensate temperature (deg C)
         cp_steam: Specific heat capacity of steam (kJ/kg-K)
-        oil_rho_cp: Oil volumetric heat capacity (kJ/m^3-K)
         h_vap: Heat of vaporization (kJ/kg)
         log: Logarithm function (for CasADi compatibility)
 
     Returns:
         Error value (zero when sum of areas equals total available area)
     """
-
-    T1 = calculate_T1(
-        m_dot,
-        mixed_oil_exit_temp,
-        oil_flow_rate,
-        cp_steam=cp_steam,
-        T_steam_sp=T_steam_sp,
-        T_boil=T_boil,
-        oil_rho_cp=oil_rho_cp,
-    )
-
-    T2 = calculate_T2(
-        m_dot,
-        T1,
-        oil_flow_rate,
-        h_vap=h_vap,
-        oil_rho_cp=oil_rho_cp,
-    )
-
-    Tr = calculate_oil_return_temp(
-        m_dot,
-        T2,
-        oil_flow_rate,
-        cp_water=cp_water,
-        T_boil=T_boil,
-        T_condensate=T_condensate,
-        oil_rho_cp=oil_rho_cp,
-    )
 
     # Calculate log mean temperature differences
     dtlm_hx1 = calculate_dtlm_hx1(
@@ -669,7 +650,7 @@ def heat_exchanger_solution_error(
         T_condensate=T_condensate,
     )
 
-    # Calculate actual
+    # Calculate actual heat transfer coefficients
     U_steam_actual = calculate_actual_heat_transfer_coefficient(
         oil_flow_rate, U_steam, F_oil_nominal=F_oil_nominal
     )
@@ -696,86 +677,223 @@ def calculate_steam_power(m_dot):
     return m_dot * (3049.0 - 2207.0)
 
 
-def calculate_net_power(
-    steam_power, pump_fluid_power, pump_and_drive_efficiency
-):
+def calculate_net_power(steam_power, pump_and_drive_power):
     """Calculate net power output from steam power and pump power.
     Excel BI37: =BI33*BI34-BI35/BI36
     """
-    return (
-        steam_power * GENERATOR_EFFICIENCY
-        - pump_fluid_power / pump_and_drive_efficiency
+    return steam_power * GENERATOR_EFFICIENCY - pump_and_drive_power
+
+
+def solar_plant_gen_rto_solve(
+    ambient_temp,
+    solar_rate,
+    n_lines,
+    m_pumps,
+    valve_positions_init=0.55,
+    pump_speed_scaled_init=0.6,
+    m_dot_init=0.5,
+    oil_return_temp_init=250.0,
+    T_steam_sp=BOILER_T_STEAM_SP,
+    U_steam=HX3_U_STEAM,
+    U_boil=HX2_U_BOIL,
+    U_liquid=HX1_U_LIQUID,
+    hx_area=HX_AREA,
+    F_oil_nominal=F_OIL_NOMINAL,
+    cp_water=CP_WATER,
+    T_boil=BOILER_T_BOIL,
+    T_condensate=BOILER_T_CONDENSATE,
+    cp_steam=CP_STEAM,
+    oil_rho_cp=OIL_RHO_CP,
+    h_vap=H_VAP,
+    solver_name="ipopt",
+    solver_opts=None,
+):
+    """Solve the steam generator RTO optimization problem.
+
+    Finds the optimal steam mass flow rate that satisfies the heat exchanger
+    area constraint while respecting temperature constraints to avoid NaN
+    values in the log mean temperature difference calculations.
+
+    This function uses a nonlinear optimizer instead of a rootfinder to
+    properly handle the temperature constraints that prevent numerical issues.
+
+    Parameters
+    ----------
+    oil_flow_rate : float
+        Thermal oil flow rate (m^3/h)
+    mixed_oil_exit_temp : float
+        Mixed oil exit temperature from collectors (deg C)
+    m_dot_init : float, optional
+        Initial guess for steam mass flow rate (kg/s) (default: 0.5)
+    T_steam_sp : float, optional
+        Steam setpoint temperature (deg C)
+    U_steam : float, optional
+        Nominal heat transfer coefficient for steam (W/m^2-K)
+    U_boil : float, optional
+        Nominal heat transfer coefficient for boiling (W/m^2-K)
+    U_liquid : float, optional
+        Nominal heat transfer coefficient for liquid (W/m^2-K)
+    hx_area : float, optional
+        Total available heat exchanger area (m^2)
+    F_oil_nominal : float, optional
+        Nominal oil flow rate for U coefficient (m^3/s)
+    cp_water : float, optional
+        Specific heat capacity of water (kJ/kg-K)
+    T_boil : float, optional
+        Boiling temperature (deg C)
+    T_condensate : float, optional
+        Condensate temperature (deg C)
+    cp_steam : float, optional
+        Specific heat capacity of steam (kJ/kg-K)
+    oil_rho_cp : float, optional
+        Oil volumetric heat capacity (kJ/m^3-K)
+    h_vap : float, optional
+        Heat of vaporization (kJ/kg)
+    solver_name : str, optional
+        Name of the optimizer (default: 'ipopt')
+    solver_opts : dict, optional
+        Solver options dictionary
+
+    Returns
+    -------
+    sol : OptiSol
+        CasADi optimization solution object
+    variables : dict
+        Dictionary containing optimized variables and outputs including:
+        - m_dot: Optimal steam mass flow rate (kg/s)
+        - T1, T2, Tr: Oil temperatures through heat exchangers (deg C)
+        - area_error: Heat exchanger area constraint residual
+    """
+    if solver_opts is None:
+        solver_opts = {}
+
+    # Construct function to calculate collector exit temps and pump power
+    calculate_collector_exit_temps_and_pump_power = (
+        make_calculate_collector_exit_temps_and_pump_power(n_lines, m_pumps)
     )
 
+    # Initialize optimization session
+    opti = cas.Opti()
 
-def make_calculate_m_dot():
-    """Create a CasADi function for calculating steam mass flow rate.
+    # Decision variables
+    valve_positions = opti.variable(n_lines)
+    pump_speed_scaled = opti.variable()
+    oil_return_temp = opti.variable()
+    m_dot = opti.variable()
 
-    WARNING: This function uses a rootfinder to solve heat_exchanger_solution_error
-    for m_dot. This approach is NOT RECOMMENDED due to numerical issues - the residual
-    function contains NaN regions that cause the rootfinder to fail (see detailed
-    explanation in heat_exchanger_solution_error docstring).
+    collector_flow_rates, pump_and_drive_power, oil_exit_temps = (
+        calculate_collector_exit_temps_and_pump_power(
+            valve_positions,
+            pump_speed_scaled,
+            oil_return_temp,
+            ambient_temp,
+            solar_rate,
+        )
+    )
 
-    RECOMMENDED ALTERNATIVE:
-    Instead of using this function, solve for m_dot as a decision variable in the
-    global optimization problem, with constraints:
-        - m_dot > 0.1 (reasonable lower bound)
-        - T2 > T_boil (e.g., T2 > 310°C) to avoid NaN in DTLM calculations
-        - heat_exchanger_solution_error(...) == 0 (area constraint)
+    mixed_oil_exit_temp = calculate_mixed_oil_exit_temp(
+        oil_exit_temps, collector_flow_rates
+    )
+    oil_flow_rate = cas.sum(collector_flow_rates)
 
-    This function is kept for reference but should not be used in production code.
-    """
+    # Calculate intermediate temperatures
+    T1 = calculate_T1(
+        m_dot,
+        mixed_oil_exit_temp,
+        oil_flow_rate,
+        cp_steam=cp_steam,
+        T_steam_sp=T_steam_sp,
+        T_boil=T_boil,
+        oil_rho_cp=oil_rho_cp,
+    )
 
-    # Unknown
-    m_dot = cas.SX.sym("m_dot")
+    T2 = calculate_T2(
+        m_dot,
+        T1,
+        oil_flow_rate,
+        h_vap=h_vap,
+        oil_rho_cp=oil_rho_cp,
+    )
 
-    # Knowns
-    oil_flow_rate = cas.SX.sym("oil_flow_rate")
-    mixed_oil_exit_temp = cas.SX.sym("mixed_oil_exit_temp")
+    Tr = calculate_oil_return_temp(
+        m_dot,
+        T2,
+        oil_flow_rate,
+        cp_water=cp_water,
+        T_boil=T_boil,
+        T_condensate=T_condensate,
+        oil_rho_cp=oil_rho_cp,
+    )
 
-    # Set everything else to defaults
-    residual = heat_exchanger_solution_error(
+    # Calculate heat exchanger area constraint error
+    area_error = heat_exchanger_solution_error(
+        T1,
+        T2,
+        Tr,
         m_dot,
         oil_flow_rate,
         mixed_oil_exit_temp,
-        T_steam_sp=BOILER_T_STEAM_SP,
-        U_steam=HX3_U_STEAM,
-        U_boil=HX2_U_BOIL,
-        U_liquid=HX1_U_LIQUID,
-        hx_area=HX_AREA,
-        F_oil_nominal=F_OIL_NOMINAL,
-        cp_water=CP_WATER,
-        T_boil=BOILER_T_BOIL,
-        T_condensate=BOILER_T_CONDENSATE,
-        cp_steam=CP_STEAM,
-        oil_rho_cp=OIL_RHO_CP,
-        h_vap=H_VAP,
+        T_steam_sp=T_steam_sp,
+        U_steam=U_steam,
+        U_boil=U_boil,
+        U_liquid=U_liquid,
+        hx_area=hx_area,
+        F_oil_nominal=F_oil_nominal,
+        cp_water=cp_water,
+        T_boil=T_boil,
+        T_condensate=T_condensate,
+        cp_steam=cp_steam,
+        h_vap=h_vap,
         log=cas.log,
     )
 
-    # Make rootfinder to solve heat exchanger area constraint
-    x = m_dot
-    p = cas.vertcat(oil_flow_rate, mixed_oil_exit_temp)
+    # Calculate other output variables
+    steam_power = calculate_steam_power(m_dot)
+    net_power = calculate_net_power(steam_power, pump_and_drive_power)
 
-    # Use kinsol solver which is more robust for this type of problem
-    opts = {
-        'abstol': 1e-8,
-        'max_iter': 100
+    # Add constraints
+    opti.subject_to(opti.bounded(0.1, m_dot, 2.0))  # TODO: Is this needed?
+
+    # Temperature constraints to avoid NaN in DTLM calculations
+    opti.subject_to(mixed_oil_exit_temp > T_steam_sp)  # For HX1
+    opti.subject_to(T1 > T_boil)  # For HX1 and HX2
+    opti.subject_to(T2 > T_boil)  # For HX2 and HX3 (critical constraint)
+    opti.subject_to(Tr > T_condensate)  # For HX3
+    opti.subject_to(T1 > T2)  # For HX2
+
+    # Heat exchanger area constraint (equality constraint)
+    opti.subject_to(area_error == 0)  # TODO: Is this needed?
+    opti.subject_to(oil_return_temp == Tr)
+
+    # Cost function - minimize deviation from feasibility
+    # (Since we only have equality constraint, we minimize squared error)
+    opti.minimize(area_error**2)
+
+    # Set initial values
+    opti.set_initial(m_dot, m_dot_init)
+    opti.set_initial(valve_positions, valve_positions_init)
+    opti.set_initial(pump_speed_scaled, pump_speed_scaled_init)
+    opti.set_initial(oil_return_temp, oil_return_temp_init)
+
+    # Solver options
+    opti.solver(solver_name, solver_opts)
+    sol = opti.solve()
+
+    variables = {
+        "valve_positions": opti.value(valve_positions),
+        "pump_speed_scaled": opti.value(pump_speed_scaled),
+        "oil_return_temp": opti.value(oil_return_temp),
+        "m_dot": opti.value(m_dot),
+        "T1": opti.value(T1),
+        "T2": opti.value(T2),
+        "Tr": opti.value(Tr),
+        "pump_and_drive_power": opti.value(pump_and_drive_power),
+        "steam_power": opti.value(steam_power),
+        "net_power": opti.value(net_power),
+        "area_error": opti.value(area_error),
     }
-    rf = cas.rootfinder("RF", "kinsol", {"x": x, "p": p, "g": residual}, opts)
 
-    # Root finder solution
-    # Initial guess must be low enough to keep T2 > T_boil (310°C)
-    sol_rf = rf(x0=[0.5], p=p)
-    m_dot_sol = sol_rf["x"]
-
-    return cas.Function(
-        "calculate_m_dot",
-        [oil_flow_rate, mixed_oil_exit_temp],
-        [m_dot_sol],
-        ["oil_flow_rate", "mixed_oil_exit_temp"],
-        ["m_dot"],
-    )
+    return sol, variables
 
 
 # =============================================================================
@@ -837,8 +955,8 @@ def solar_plant_rto_solve(
     opti = cas.Opti()
 
     # Construct system model calculation function
-    calculate_exit_temps_and_pump_power = (
-        make_collector_exit_temps_and_pump_power_function(n_lines, m_pumps)
+    calculate_collector_exit_temps_and_pump_power = (
+        make_calculate_collector_exit_temps_and_pump_power(n_lines, m_pumps)
     )
 
     max_oil_exit_temps = cas.DM(max_oil_exit_temps)
@@ -850,7 +968,7 @@ def solar_plant_rto_solve(
 
     # System model outputs
     collector_flow_rates, pump_and_drive_power, oil_exit_temps = (
-        calculate_exit_temps_and_pump_power(
+        calculate_collector_exit_temps_and_pump_power(
             valve_positions,
             pump_speed_scaled,
             oil_return_temp,
