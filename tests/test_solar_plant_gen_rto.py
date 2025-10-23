@@ -436,6 +436,8 @@ class TestSolarPlantGenRTOSolve:
         # Extract solution
         valve_positions = variables["valve_positions"]
         pump_speed_scaled = variables["pump_speed_scaled"]
+        collector_flow_rates = variables["collector_flow_rates"]
+        oil_exit_temps = variables["oil_exit_temps"]
         m_dot = variables["m_dot"]
         T1 = variables["T1"]
         T2 = variables["T2"]
@@ -470,6 +472,19 @@ class TestSolarPlantGenRTOSolve:
         # Verify oil return temperature equals Tr (equality constraint)
         assert np.isclose(oil_return_temp, Tr, atol=1e-4), (
             f"oil_return_temp should equal Tr, got {oil_return_temp} vs {Tr}"
+        )
+
+        # Verify collector flow rates and oil exit temps are arrays
+        assert len(collector_flow_rates) == n_lines, (
+            f"collector_flow_rates should have {n_lines} elements"
+        )
+        assert len(oil_exit_temps) == n_lines, (
+            f"oil_exit_temps should have {n_lines} elements"
+        )
+
+        # Verify all flow rates are positive
+        assert np.all(collector_flow_rates > 0), (
+            "All collector flow rates should be positive"
         )
 
         # Print test inputs

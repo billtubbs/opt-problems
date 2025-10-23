@@ -813,6 +813,8 @@ def solar_plant_gen_rto_solve(
         Dictionary containing optimized variables and outputs including:
         - valve_positions: Optimal valve positions
         - pump_speed_scaled: Optimal scaled pump speed
+        - collector_flow_rates: Flow rates for each collector line (m^3/h)
+        - oil_exit_temps: Oil exit temperatures for each collector line (deg C)
         - oil_return_temp: Optimal oil return temperature (deg C)
         - m_dot: Optimal steam mass flow rate (kg/s)
         - T1, T2, Tr: Oil temperatures through heat exchangers (deg C)
@@ -925,6 +927,8 @@ def solar_plant_gen_rto_solve(
     variables = {
         "valve_positions": opti.value(valve_positions),
         "pump_speed_scaled": opti.value(pump_speed_scaled),
+        "collector_flow_rates": opti.value(collector_flow_rates),
+        "oil_exit_temps": opti.value(oil_exit_temps),
         "oil_return_temp": opti.value(oil_return_temp),
         "m_dot": opti.value(m_dot),
         "T1": opti.value(T1),
@@ -1090,9 +1094,9 @@ def solar_plant_rto_solve(
 
     variables = {
         "valve_positions": opti.value(valve_positions),
-        "oil_exit_temps": opti.value(oil_exit_temps),
-        "collector_flow_rates": opti.value(collector_flow_rates),
         "pump_speed_scaled": opti.value(pump_speed_scaled),
+        "collector_flow_rates": opti.value(collector_flow_rates),
+        "oil_exit_temps": opti.value(oil_exit_temps),
         "pump_and_drive_power": opti.value(pump_and_drive_power),
         "potential_work": opti.value(potential_work),
         "f": f,
