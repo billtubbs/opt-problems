@@ -2,6 +2,48 @@
 
 This module contains functions for modeling and optimizing a solar thermal
 plant with collector loops, power generation and thermal oil circulation.
+
+Functions
+---------
+
+Pump and Flow Calculations
+    actual_pump_speed_from_scaled
+    calculate_pump_and_drive_efficiency
+    calculate_pump_fluid_power
+    calculate_collector_flow_rate
+    calculate_total_oil_flowrate
+    calculate_boiler_dp
+    calculate_pump_dp
+    calculate_pressure_balance
+    make_pressure_balance_function
+    make_calculate_pump_and_drive_power_function
+
+Collector Line Temperature Calculations
+    calculate_collector_oil_exit_temp
+    calculate_mixed_oil_exit_temp
+    calculate_rms_oil_exit_temps
+
+Combined System Model
+    make_calculate_collector_exit_temps_and_pump_power
+
+Steam Generator Model
+    calculate_dtlm_hx1
+    calculate_dtlm_hx2
+    calculate_dtlm_hx3
+    calculate_actual_heat_transfer_coefficient
+    calculate_Q_dot_hx1
+    calculate_Q_dot_hx2
+    calculate_Q_dot_hx3
+    calculate_hx_area
+    calculate_hx_temperatures
+    heat_exchanger_solution_error
+    calculate_steam_power
+    calculate_net_power
+
+RTO Solvers
+    solar_plant_gen_rto_solve
+    steam_generator_solve
+    solar_plant_rto_solve
 """
 
 import casadi as cas
@@ -726,10 +768,10 @@ def solar_plant_gen_rto_solve(
     solar_rate,
     n_lines,
     m_pumps,
-    valve_positions_init=0.75,
-    pump_speed_scaled_init=0.5,
-    m_dot_init=1.2,
-    oil_return_temp_init=270.0,
+    valve_positions_init=0.9,
+    pump_speed_scaled_init=0.3,
+    m_dot_init=0.75,
+    oil_return_temp_init=260.0,
     max_oil_exit_temps=OIL_EXIT_TEMPS_SP,
     T_steam_sp=BOILER_T_STEAM_SP,
     U_steam=HX3_U_STEAM,
@@ -943,6 +985,162 @@ def solar_plant_gen_rto_solve(
     return sol, variables
 
 
+def steam_generator_solve(
+    mixed_oil_exit_temp,
+    oil_flow_rate,
+    m_dot_init=0.75,
+    T_steam_sp=BOILER_T_STEAM_SP,
+    U_steam=HX3_U_STEAM,
+    U_boil=HX2_U_BOIL,
+    U_liquid=HX1_U_LIQUID,
+    hx_area=HX_AREA,
+    F_oil_nominal=F_OIL_NOMINAL,
+    cp_water=CP_WATER,
+    T_boil=BOILER_T_BOIL,
+    T_condensate=BOILER_T_CONDENSATE,
+    cp_steam=CP_STEAM,
+    oil_rho_cp=OIL_RHO_CP,
+    h_vap=H_VAP,
+    solver_name="ipopt",
+    solver_opts=None,
+):
+    """Solve the steam generator optimization problem.
+
+    Optimizes steam mass flow rate to maximize steam power while satisfying
+    heat exchanger area constraints, given the mixed oil exit temperature and
+    oil flow rate from the collector field.
+
+    Parameters
+    ----------
+    mixed_oil_exit_temp : float
+        Mixed oil exit temperature from collectors (deg C)
+    oil_flow_rate : float
+        Total oil flow rate (m^3/h)
+    m_dot_init : float, optional
+        Initial guess for steam mass flow rate (kg/s) (default: 1.2)
+    T_steam_sp : float, optional
+        Steam setpoint temperature (deg C)
+    U_steam : float, optional
+        Nominal heat transfer coefficient for steam (W/m^2-K)
+    U_boil : float, optional
+        Nominal heat transfer coefficient for boiling (W/m^2-K)
+    U_liquid : float, optional
+        Nominal heat transfer coefficient for liquid (W/m^2-K)
+    hx_area : float, optional
+        Total available heat exchanger area (m^2)
+    F_oil_nominal : float, optional
+        Nominal oil flow rate for U coefficient (m^3/s)
+    cp_water : float, optional
+        Specific heat capacity of water (kJ/kg-K)
+    T_boil : float, optional
+        Boiling temperature (deg C)
+    T_condensate : float, optional
+        Condensate temperature (deg C)
+    cp_steam : float, optional
+        Specific heat capacity of steam (kJ/kg-K)
+    oil_rho_cp : float, optional
+        Oil volumetric heat capacity (kJ/m^3-K)
+    h_vap : float, optional
+        Heat of vaporization (kJ/kg)
+    solver_name : str, optional
+        Name of the optimizer (default: 'ipopt')
+    solver_opts : dict, optional
+        Solver options dictionary
+
+    Returns
+    -------
+    sol : OptiSol
+        CasADi optimization solution object
+    variables : dict
+        Dictionary containing optimized variables and outputs including:
+        - m_dot: Optimal steam mass flow rate (kg/s)
+        - T1, T2, Tr: Oil temperatures through heat exchangers (deg C)
+        - steam_power: Steam power output (kW)
+        - hx_area_error: Heat exchanger area constraint residual
+    """
+    if solver_opts is None:
+        solver_opts = {}
+
+    # Initialize optimization session
+    opti = cas.Opti()
+
+    # Decision variable
+    m_dot = opti.variable()
+
+    # Calculate intermediate temperatures
+    T1, T2, Tr = calculate_hx_temperatures(
+        m_dot,
+        mixed_oil_exit_temp,
+        oil_flow_rate,
+        cp_steam=cp_steam,
+        T_steam_sp=T_steam_sp,
+        T_boil=T_boil,
+        cp_water=cp_water,
+        T_condensate=T_condensate,
+        h_vap=h_vap,
+        oil_rho_cp=oil_rho_cp,
+    )
+
+    # Calculate heat exchanger area constraint error
+    hx_area_error = heat_exchanger_solution_error(
+        T1,
+        T2,
+        Tr,
+        m_dot,
+        oil_flow_rate,
+        mixed_oil_exit_temp,
+        T_steam_sp=T_steam_sp,
+        U_steam=U_steam,
+        U_boil=U_boil,
+        U_liquid=U_liquid,
+        hx_area=hx_area,
+        F_oil_nominal=F_oil_nominal,
+        cp_water=cp_water,
+        T_boil=T_boil,
+        T_condensate=T_condensate,
+        cp_steam=cp_steam,
+        h_vap=h_vap,
+        log=cas.log,
+    )
+
+    # Calculate steam power
+    steam_power = calculate_steam_power(m_dot)
+
+    # Temperature constraints to avoid NaN in DTLM calculations
+    if not mixed_oil_exit_temp > T_steam_sp:
+        raise ValueError(
+            "mixed_oil_exit_temp must be greater than T_steam_sp."
+        )
+    opti.subject_to(T1 > T_boil)  # For HX1 and HX2
+    opti.subject_to(T2 > T_boil)  # For HX2 and HX3 (critical constraint)
+    opti.subject_to(Tr > T_condensate)  # For HX3
+    opti.subject_to(T1 > T2)  # For HX2
+
+    # Heat exchanger area constraint
+    opti.subject_to(hx_area_error == 0)
+
+    # Cost function - maximize steam power generation
+    opti.minimize(-steam_power)
+
+    # Set initial value
+    opti.set_initial(m_dot, m_dot_init)
+
+    # Solver options
+    opti.solver(solver_name, solver_opts)
+    sol = opti.solve()
+
+    variables = {
+        "m_dot": opti.value(m_dot),
+        "T1": opti.value(T1),
+        "T2": opti.value(T2),
+        "Tr": opti.value(Tr),
+        "steam_power": opti.value(steam_power),
+        "hx_area_error": opti.value(hx_area_error),
+    }
+
+    return sol, variables
+
+
 # =============================================================================
 # RTO SOLVER
 # =============================================================================
@@ -954,8 +1152,8 @@ def solar_plant_rto_solve(
     oil_return_temp,
     m_pumps,
     n_lines,
-    valve_positions_init=0.55,
-    pump_speed_scaled_init=0.6,
+    valve_positions_init=0.9,
+    pump_speed_scaled_init=0.3,
     max_oil_exit_temps=OIL_EXIT_TEMPS_SP,
     solver_name="ipopt",
     solver_opts=None,
