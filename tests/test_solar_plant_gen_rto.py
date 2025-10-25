@@ -12,8 +12,6 @@ import casadi as cas
 import numpy as np
 
 from problems.solar_plant_rto.solar_plant_gen_rto import (
-    PUMP_SPEED_MAX,
-    PUMP_SPEED_MIN,
     actual_pump_speed_from_scaled,
     calculate_boiler_dp,
     calculate_collector_flow_rate,
@@ -37,6 +35,10 @@ from problems.solar_plant_rto.solar_plant_gen_rto import (
 test_data = {
     "n_lines": 15,
     "m_pumps": 3,
+    "pump_speed_scaled_min": 0.3,
+    "pump_speed_scaled_max": 1.0,
+    "pump_speed_min": 1000,
+    "pump_speed_max": 2970,
     "pump_speed_scaled": 0.739913018149835,
     "actual_pump_speed": 2238.040923,
     "pump_dp": 257.2307857,
@@ -137,6 +139,53 @@ test_data = {
     "hx3_area": 0.0953425637215,
     "steam_power": 1118.04467,
     "net_power": 932.4140166,
+    # Collector valve parameters
+    "rangeability": 50.0,
+    "g_squiggle": 0.671,
+    "alpha": 0.05
+    * (850 / 30**2 - 0.671 / (10 * (50 ** (0.95 - 1)) ** 2) ** 2),
+    "cv": 10.0,
+    # Collector temperature calculation parameters
+    "mirror_concentration_factor": 52,
+    "fluid_ho": 0.00361,
+    "fluid_rho_cp": 1600,  # kJ/m^3-K
+    "d_out": 0.07,  # m
+    # Pump parameters
+    "dp_max": 1004.2368,
+    "q_max": 224.6293,
+    "max_speed": 2970,
+    "exponent": 4.346734,
+    # Steam generator parameters
+    "cp_steam": 1.996,  # kJ/kg-K
+    "cp_water": 4.182,  # kJ/kg-K
+    "T_steam_sp": 385.0,  # deg C
+    "T_boil": 310.0,  # deg C
+    "T_condensate": 60,  # deg C
+    "h_vap": 2260.0,  # kJ/kg
+    "oil_rho_cp": 1600,  # kJ/m^3-K
+    "U_steam": 1000.0,  # W/m^2-K
+    "U_boil": 3000.0,  # W/m^2-K
+    "U_liquid": 900.0,  # W/m^2-K
+    "hx_area": 0.25,  # m^2
+    "F_oil_nominal": 200.0 / 3600.0,  # m^3/s
+    # Temperature constraints
+    "max_oil_exit_temps": (
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+        395.0,
+    ),
 }
 
 
@@ -160,8 +209,16 @@ class TestPumpAndFlowCalculations:
 
     def test_actual_pump_speed_from_scaled(self):
         """Test pump speed conversion."""
-        assert actual_pump_speed_from_scaled(0.3) == PUMP_SPEED_MIN
-        assert actual_pump_speed_from_scaled(1.0) == PUMP_SPEED_MAX
+        pump_speed_scaled_min = test_data["pump_speed_scaled_min"]
+        assert (
+            actual_pump_speed_from_scaled(pump_speed_scaled_min)
+            == test_data["pump_speed_min"]
+        )
+        pump_speed_scaled_max = test_data["pump_speed_scaled_max"]
+        assert (
+            actual_pump_speed_from_scaled(pump_speed_scaled_max)
+            == test_data["pump_speed_max"]
+        )
         pump_speed_scaled = test_data["pump_speed_scaled"]
         actual_pump_speed = test_data["actual_pump_speed"]
         assert np.isclose(
@@ -179,8 +236,19 @@ class TestPumpAndFlowCalculations:
         """Test collector flow rate calculation."""
         valve_position = test_data["valve_positions"][1]
         loop_dp = test_data["loop_dp"]
+        rangeability = test_data["rangeability"]
+        g_squiggle = test_data["g_squiggle"]
+        alpha = test_data["alpha"]
+        cv = test_data["cv"]
+
         collector_flow_rate = calculate_collector_flow_rate(
-            valve_position, loop_dp, sqrt=np.sqrt
+            valve_position,
+            loop_dp,
+            rangeability=rangeability,
+            g_squiggle=g_squiggle,
+            alpha=alpha,
+            cv=cv,
+            sqrt=np.sqrt,
         )
         assert np.isclose(
             collector_flow_rate, test_data["collector_flow_rates"][1]
@@ -206,8 +274,19 @@ class TestPumpAndFlowCalculations:
         actual_pump_speed = test_data["actual_pump_speed"]
         total_flow_rate = test_data["total_flow_rate"]
         m_pumps = test_data["m_pumps"]
+        dp_max = test_data["dp_max"]
+        q_max = test_data["q_max"]
+        max_speed = test_data["max_speed"]
+        exponent = test_data["exponent"]
+
         pump_dp = calculate_pump_dp(
-            actual_pump_speed, total_flow_rate, m_pumps
+            actual_pump_speed,
+            total_flow_rate,
+            m_pumps,
+            dp_max=dp_max,
+            q_max=q_max,
+            max_speed=max_speed,
+            exponent=exponent,
         )
         assert np.isclose(pump_dp, test_data["pump_dp"])
 
@@ -262,12 +341,21 @@ class TestOilTemperatureCalculations:
         ambient_temp = test_data["ambient_temp"]
         solar_rate = test_data["solar_rate"]
         loop_thermal_efficiency = test_data["loop_thermal_efficiencies"][0]
+        mirror_concentration_factor = test_data["mirror_concentration_factor"]
+        fluid_ho = test_data["fluid_ho"]
+        fluid_rho_cp = test_data["fluid_rho_cp"]
+        d_out = test_data["d_out"]
+
         oil_exit_temp = calculate_collector_oil_exit_temp(
             flow_rate,
             oil_return_temp,
             ambient_temp,
             solar_rate,
             loop_thermal_efficiency,
+            mirror_concentration_factor=mirror_concentration_factor,
+            fluid_ho=fluid_ho,
+            fluid_rho_cp=fluid_rho_cp,
+            d_out=d_out,
             exp=np.exp,
             pi=np.pi,
         )
@@ -368,8 +456,25 @@ class TestSteamGeneratorModel:
         m_dot = test_data["m_dot"]
         mixed_oil_exit_temp = test_data["mixed_oil_exit_temp"]
         oil_flow_rate = test_data["total_flow_rate"]
+        cp_steam = test_data["cp_steam"]
+        T_steam_sp = test_data["T_steam_sp"]
+        T_boil = test_data["T_boil"]
+        cp_water = test_data["cp_water"]
+        T_condensate = test_data["T_condensate"]
+        h_vap = test_data["h_vap"]
+        oil_rho_cp = test_data["oil_rho_cp"]
+
         T1, T2, Tr = calculate_hx_temperatures(
-            m_dot, mixed_oil_exit_temp, oil_flow_rate
+            m_dot,
+            mixed_oil_exit_temp,
+            oil_flow_rate,
+            cp_steam=cp_steam,
+            T_steam_sp=T_steam_sp,
+            T_boil=T_boil,
+            cp_water=cp_water,
+            T_condensate=T_condensate,
+            h_vap=h_vap,
+            oil_rho_cp=oil_rho_cp,
         )
         assert np.isclose(T1, test_data["T1"])
         assert np.isclose(T2, test_data["T2"])
@@ -383,8 +488,37 @@ class TestSteamGeneratorModel:
         m_dot = test_data["m_dot"]
         oil_flow_rate = test_data["total_flow_rate"]
         mixed_oil_exit_temp = test_data["mixed_oil_exit_temp"]
+        T_steam_sp = test_data["T_steam_sp"]
+        U_steam = test_data["U_steam"]
+        U_boil = test_data["U_boil"]
+        U_liquid = test_data["U_liquid"]
+        hx_area = test_data["hx_area"]
+        F_oil_nominal = test_data["F_oil_nominal"]
+        cp_water = test_data["cp_water"]
+        T_boil = test_data["T_boil"]
+        T_condensate = test_data["T_condensate"]
+        cp_steam = test_data["cp_steam"]
+        h_vap = test_data["h_vap"]
+
         error = heat_exchanger_solution_error(
-            T1, T2, Tr, m_dot, oil_flow_rate, mixed_oil_exit_temp, log=np.log
+            T1,
+            T2,
+            Tr,
+            m_dot,
+            oil_flow_rate,
+            mixed_oil_exit_temp,
+            T_steam_sp=T_steam_sp,
+            U_steam=U_steam,
+            U_boil=U_boil,
+            U_liquid=U_liquid,
+            hx_area=hx_area,
+            F_oil_nominal=F_oil_nominal,
+            cp_water=cp_water,
+            T_boil=T_boil,
+            T_condensate=T_condensate,
+            cp_steam=cp_steam,
+            h_vap=h_vap,
+            log=np.log,
         )
         assert np.isclose(error, 0.0, atol=1e-7)
 
@@ -424,6 +558,19 @@ class TestSolarPlantGenRTOSolve:
         solar_rate = test_data["solar_rate"]
         n_lines = test_data["n_lines"]
         m_pumps = test_data["m_pumps"]
+        max_oil_exit_temps = test_data["max_oil_exit_temps"]
+        T_steam_sp = test_data["T_steam_sp"]
+        U_steam = test_data["U_steam"]
+        U_boil = test_data["U_boil"]
+        U_liquid = test_data["U_liquid"]
+        hx_area = test_data["hx_area"]
+        F_oil_nominal = test_data["F_oil_nominal"]
+        cp_water = test_data["cp_water"]
+        T_boil = test_data["T_boil"]
+        T_condensate = test_data["T_condensate"]
+        cp_steam = test_data["cp_steam"]
+        oil_rho_cp = test_data["oil_rho_cp"]
+        h_vap = test_data["h_vap"]
 
         # Solve the optimization problem
         sol, variables = solar_plant_gen_rto_solve(
@@ -431,6 +578,19 @@ class TestSolarPlantGenRTOSolve:
             solar_rate=solar_rate,
             n_lines=n_lines,
             m_pumps=m_pumps,
+            max_oil_exit_temps=max_oil_exit_temps,
+            T_steam_sp=T_steam_sp,
+            U_steam=U_steam,
+            U_boil=U_boil,
+            U_liquid=U_liquid,
+            hx_area=hx_area,
+            F_oil_nominal=F_oil_nominal,
+            cp_water=cp_water,
+            T_boil=T_boil,
+            T_condensate=T_condensate,
+            cp_steam=cp_steam,
+            oil_rho_cp=oil_rho_cp,
+            h_vap=h_vap,
         )
 
         # Extract solution
@@ -526,6 +686,7 @@ class TestSolarPlantRTOSolve:
         oil_return_temp = test_data["oil_return_temp"]
         n_lines = test_data["n_lines"]
         m_pumps = test_data["m_pumps"]
+        max_oil_exit_temps = test_data["max_oil_exit_temps"]
 
         # Solve with default optimizer settings
         sol, variables = solar_plant_rto_solve(
@@ -534,6 +695,7 @@ class TestSolarPlantRTOSolve:
             oil_return_temp=oil_return_temp,
             m_pumps=m_pumps,
             n_lines=n_lines,
+            max_oil_exit_temps=max_oil_exit_temps,
         )
 
         # Verify solution is successful

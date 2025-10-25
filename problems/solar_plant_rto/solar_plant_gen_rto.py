@@ -53,6 +53,8 @@ import casadi as cas
 # =============================================================================
 
 # Collector lines
+COLLECTOR_PIPE_DIAMETER_INT = 0.064  # m
+COLLECTOR_PIPE_DIAMETER_OUT = 0.07  # m
 COLLECTOR_VALVE_RANGEABILITY = 50.0
 COLLECTOR_VALVE_G_SQUIGGLE = 0.671
 COLLECTOR_VALVE_ALPHA = 0.05 * (
@@ -60,16 +62,21 @@ COLLECTOR_VALVE_ALPHA = 0.05 * (
 )
 COLLECTOR_VALVE_CV = 10.0
 MIRROR_CONCENTRATION_FACTOR = 52
+
+# Oil pumps and flows
 PUMP_SPEED_MIN = 1000
 PUMP_SPEED_MAX = 2970
 BOILER_FLOW_LOSS_FACTOR = 0.038
 PUMP_DP_MAX = 1004.2368
 PUMP_QMAX = 224.6293
 PUMP_EXPONENT = 4.346734
+
+# Oil Properties
 OIL_RHO = 800  # Kg/m^3
 OIL_RHO_CP = 1600  # kJ/m^3-K
-HO = 0.00361
-D_OUT = 0.07  # m
+OIL_HO = 0.00361
+
+# Power generator
 GENERATOR_EFFICIENCY = 0.85
 
 LOOP_THERMAL_EFFICIENCIES = [
@@ -315,9 +322,9 @@ def calculate_collector_oil_exit_temp(
     solar_rate,
     loop_thermal_efficiency,
     mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
-    fluid_ho=HO,
+    fluid_ho=OIL_HO,
     fluid_rho_cp=OIL_RHO_CP,
-    d_out=D_OUT,
+    d_out=COLLECTOR_PIPE_DIAMETER_OUT,
     exp=cas.exp,
     pi=cas.pi,
 ):
@@ -492,7 +499,8 @@ def calculate_actual_heat_transfer_coefficient(
     Excel BL3: =BT3/((BT4/($AD$23/3600))^0.8)
     Excel BL4: =BX2/((BT4/($AD$23/3600))^0.8)
     """
-    return U / ((F_oil_nominal / (total_flow_rate / 3600)) ** 0.8)
+    U_actual = U / ((F_oil_nominal * 3600 / total_flow_rate) ** 0.8)
+    return U_actual
 
 
 def calculate_Q_dot_hx1(
@@ -584,7 +592,7 @@ def calculate_hx_temperatures(
     Args:
         m_dot: Mass flow rate of water/steam (kg/s)
         mixed_oil_exit_temp: Mixed oil exit temperature from collectors (deg C)
-        oil_flow_rate: Thermal oil flow rate (m^3/h)
+        oil_flow_rate: Thermal oil flow rate (kg/s)
         cp_steam: Specific heat capacity of steam (kJ/kg-K)
         T_steam_sp: Steam setpoint temperature (deg C)
         T_boil: Boiling temperature (deg C)
@@ -674,7 +682,7 @@ def heat_exchanger_solution_error(
         T2: Oil temperature after HX2 (deg C)
         Tr: Oil return temperature after HX3 (deg C)
         m_dot: Mass flow rate of water/steam (kg/s)
-        oil_flow_rate: Thermal oil flow rate (m^3/h)
+        oil_flow_rate: Thermal oil flow rate (kg/s)
         mixed_oil_exit_temp: Mixed oil exit temperature from collectors (deg C)
         T_steam_sp: Steam setpoint temperature (deg C)
         U_steam: Nominal heat transfer coefficient for steam (W/m^2-K)
@@ -855,7 +863,7 @@ def solar_plant_gen_rto_solve(
         Dictionary containing optimized variables and outputs including:
         - valve_positions: Optimal valve positions
         - pump_speed_scaled: Optimal scaled pump speed
-        - collector_flow_rates: Flow rates for each collector line (m^3/h)
+        - collector_flow_rates: Flow rates for each collector line (kg/s)
         - oil_exit_temps: Oil exit temperatures for each collector line (deg C)
         - oil_return_temp: Optimal oil return temperature (deg C)
         - m_dot: Optimal steam mass flow rate (kg/s)
@@ -1015,7 +1023,7 @@ def steam_generator_solve(
     mixed_oil_exit_temp : float
         Mixed oil exit temperature from collectors (deg C)
     oil_flow_rate : float
-        Total oil flow rate (m^3/h)
+        Total oil flow rate (kg/s)
     m_dot_init : float, optional
         Initial guess for steam mass flow rate (kg/s) (default: 1.2)
     T_steam_sp : float, optional
@@ -1195,7 +1203,7 @@ def solar_plant_rto_solve(
         Dictionary containing optimized variables and outputs including:
         - valve_positions: Optimal valve positions
         - oil_exit_temps: Oil exit temperatures for each collector line (deg C)
-        - collector_flow_rates: Flow rates for each collector line (m^3/h)
+        - collector_flow_rates: Flow rates for each collector line (kg/s)
         - pump_speed_scaled: Optimal scaled pump speed
         - pump_and_drive_power: Pump and drive power (kW)
         - potential_work: Potential work output from Carnot cycle (kW)
