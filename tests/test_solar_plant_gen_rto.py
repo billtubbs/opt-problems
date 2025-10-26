@@ -147,13 +147,13 @@ test_data = {
     "cv": 10.0,
     # Collector temperature calculation parameters
     "mirror_concentration_factor": 52,
-    "fluid_ho": 0.00361,
-    "fluid_rho_cp": 1600,  # kJ/m^3-K
+    "h_outer": 0.00361,
+    "oil_rho_cp": 1600,  # kJ/m^3-K
     "d_out": 0.07,  # m
     # Pump parameters
     "dp_max": 1004.2368,
     "q_max": 224.6293,
-    "max_speed": 2970,
+    "speed_max": 2970,
     "exponent": 4.346734,
     # Steam generator parameters
     "cp_steam": 1.996,  # kJ/kg-K
@@ -189,6 +189,7 @@ test_data = {
 }
 
 
+# TODO: Check with Russ
 # Items changed compared t0 test_solar_plant_rto.py:
 #   - m_pumps: 2 -> 3
 #   - pump_speed_scaled (min): 0.2 -> 0.3
@@ -196,6 +197,9 @@ test_data = {
 #   - change to calculate_pump_dp
 #   - collector outlet temp formula changed (a, b)
 #   - What is T_forecast?  Is it supposed to match mixed T oil?
+#   - What is N_pumps in calculate_boiler_dp?
+#   - Oil density of 800 is too high; Slytherm 636.52 kg/m^3
+#   - Luis calculates higher flowrates and velocities now
 
 
 class TestPumpAndFlowCalculations:
@@ -276,7 +280,7 @@ class TestPumpAndFlowCalculations:
         m_pumps = test_data["m_pumps"]
         dp_max = test_data["dp_max"]
         q_max = test_data["q_max"]
-        max_speed = test_data["max_speed"]
+        speed_max = test_data["speed_max"]
         exponent = test_data["exponent"]
 
         pump_dp = calculate_pump_dp(
@@ -285,7 +289,7 @@ class TestPumpAndFlowCalculations:
             m_pumps,
             dp_max=dp_max,
             q_max=q_max,
-            max_speed=max_speed,
+            speed_max=speed_max,
             exponent=exponent,
         )
         assert np.isclose(pump_dp, test_data["pump_dp"])
@@ -342,8 +346,8 @@ class TestOilTemperatureCalculations:
         solar_rate = test_data["solar_rate"]
         loop_thermal_efficiency = test_data["loop_thermal_efficiencies"][0]
         mirror_concentration_factor = test_data["mirror_concentration_factor"]
-        fluid_ho = test_data["fluid_ho"]
-        fluid_rho_cp = test_data["fluid_rho_cp"]
+        h_outer = test_data["h_outer"]
+        oil_rho_cp = test_data["oil_rho_cp"]
         d_out = test_data["d_out"]
 
         oil_exit_temp = calculate_collector_oil_exit_temp(
@@ -353,8 +357,8 @@ class TestOilTemperatureCalculations:
             solar_rate,
             loop_thermal_efficiency,
             mirror_concentration_factor=mirror_concentration_factor,
-            fluid_ho=fluid_ho,
-            fluid_rho_cp=fluid_rho_cp,
+            h_outer=h_outer,
+            oil_rho_cp=oil_rho_cp,
             d_out=d_out,
             exp=np.exp,
             pi=np.pi,
@@ -370,12 +374,22 @@ class TestOilTemperatureCalculations:
         loop_thermal_efficiencies = cas.DM(
             test_data["loop_thermal_efficiencies"]
         )
+        mirror_concentration_factor = test_data["mirror_concentration_factor"]
+        h_outer = test_data["h_outer"]
+        oil_rho_cp = test_data["oil_rho_cp"]
+        d_out = test_data["d_out"]
         oil_exit_temps = calculate_collector_oil_exit_temp(
             collector_flow_rates,
             oil_return_temp,
             ambient_temp,
             solar_rate,
             loop_thermal_efficiencies,
+            mirror_concentration_factor=mirror_concentration_factor,
+            h_outer=h_outer,
+            oil_rho_cp=oil_rho_cp,
+            d_out=d_out,
+            exp=np.exp,
+            pi=np.pi,
         )
         assert np.allclose(
             oil_exit_temps, test_data["oil_exit_temps"].reshape(-1, 1)
@@ -415,9 +429,21 @@ class TestCasADiFunctions:
         """Test pump and drive power function creation."""
         n_lines = test_data["n_lines"]
         m_pumps = test_data["m_pumps"]
+        loop_thermal_efficiencies = test_data["loop_thermal_efficiencies"]
+        mirror_concentration_factor = test_data["mirror_concentration_factor"]
+        h_outer = test_data["h_outer"]
+        oil_rho_cp = test_data["oil_rho_cp"]
+        d_out = test_data["d_out"]
+
         calculate_collector_exit_temps_and_pump_power = (
             make_calculate_collector_exit_temps_and_pump_power(
-                n_lines, m_pumps
+                n_lines,
+                m_pumps,
+                loop_thermal_efficiencies=loop_thermal_efficiencies,
+                mirror_concentration_factor=mirror_concentration_factor,
+                h_outer=h_outer,
+                oil_rho_cp=oil_rho_cp,
+                d_out=d_out,
             )
         )
 
@@ -686,6 +712,17 @@ class TestSolarPlantRTOSolve:
         oil_return_temp = test_data["oil_return_temp"]
         n_lines = test_data["n_lines"]
         m_pumps = test_data["m_pumps"]
+        rangeability = test_data["rangeability"]
+        g_squiggle = test_data["g_squiggle"]
+        alpha = test_data["alpha"]
+        pump_speed_min = test_data["pump_speed_min"]
+        pump_speed_max = test_data["pump_speed_max"]
+        cv = test_data["cv"]
+        loop_thermal_efficiencies = test_data["loop_thermal_efficiencies"]
+        mirror_concentration_factor = test_data["mirror_concentration_factor"]
+        h_outer = test_data["h_outer"]
+        oil_rho_cp = test_data["oil_rho_cp"]
+        d_out = test_data["d_out"]
         max_oil_exit_temps = test_data["max_oil_exit_temps"]
 
         # Solve with default optimizer settings
@@ -695,6 +732,17 @@ class TestSolarPlantRTOSolve:
             oil_return_temp=oil_return_temp,
             m_pumps=m_pumps,
             n_lines=n_lines,
+            rangeability=rangeability,
+            g_squiggle=g_squiggle,
+            alpha=alpha,
+            pump_speed_min=pump_speed_min,
+            pump_speed_max=pump_speed_max,
+            cv=cv,
+            loop_thermal_efficiencies=loop_thermal_efficiencies,
+            mirror_concentration_factor=mirror_concentration_factor,
+            h_outer=h_outer,
+            oil_rho_cp=oil_rho_cp,
+            d_out=d_out,
             max_oil_exit_temps=max_oil_exit_temps,
         )
 

@@ -53,7 +53,7 @@ import casadi as cas
 # =============================================================================
 
 # Collector lines
-COLLECTOR_PIPE_DIAMETER_INT = 0.064  # m
+COLLECTOR_PIPE_DIAMETER_INT = 0.066  # m
 COLLECTOR_PIPE_DIAMETER_OUT = 0.07  # m
 COLLECTOR_VALVE_RANGEABILITY = 50.0
 COLLECTOR_VALVE_G_SQUIGGLE = 0.671
@@ -62,6 +62,7 @@ COLLECTOR_VALVE_ALPHA = 0.05 * (
 )
 COLLECTOR_VALVE_CV = 10.0
 MIRROR_CONCENTRATION_FACTOR = 52
+H_OUTER = 0.00361  # kW/m2-K
 
 # Oil pumps and flows
 PUMP_SPEED_MIN = 1000
@@ -72,9 +73,8 @@ PUMP_QMAX = 224.6293
 PUMP_EXPONENT = 4.346734
 
 # Oil Properties
-OIL_RHO = 800  # Kg/m^3
-OIL_RHO_CP = 1600  # kJ/m^3-K
-OIL_HO = 0.00361
+OIL_RHO = 636.52  # Kg/m^3
+OIL_RHO_CP = OIL_RHO * 2.138  # kJ/m^3-K
 
 # Power generator
 GENERATOR_EFFICIENCY = 0.85
@@ -136,12 +136,11 @@ F_OIL_NOMINAL = 200.0 / 3600.0  # m^3/s
 # =============================================================================
 
 
-def actual_pump_speed_from_scaled(speed_scaled):
+def actual_pump_speed_from_scaled(
+    speed_scaled, speed_min=PUMP_SPEED_MIN, speed_max=PUMP_SPEED_MAX
+):
     """Convert scaled pump speed (0.2-1.0) to actual speed (rpm)."""
-    return (
-        PUMP_SPEED_MIN
-        + (speed_scaled - 0.3) * (PUMP_SPEED_MAX - PUMP_SPEED_MIN) / 0.7
-    )
+    return speed_min + (speed_scaled - 0.3) * (speed_max - speed_min) / 0.7
 
 
 def calculate_pump_and_drive_efficiency(flow_rate, actual_pump_speed):
@@ -177,11 +176,24 @@ def calculate_collector_flow_rate(
 
 
 def calculate_total_oil_flowrate(
-    valve_positions, loop_dp, sum=cas.sum1, sqrt=cas.sqrt
+    valve_positions,
+    loop_dp,
+    rangeability=COLLECTOR_VALVE_RANGEABILITY,
+    g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+    alpha=COLLECTOR_VALVE_ALPHA,
+    cv=COLLECTOR_VALVE_CV,
+    sum=cas.sum1,
+    sqrt=cas.sqrt,
 ):
     """Calculate total flow rate from all collector loops."""
     flow_rates = calculate_collector_flow_rate(
-        valve_positions, loop_dp, sqrt=sqrt
+        valve_positions,
+        loop_dp,
+        rangeability=rangeability,
+        g_squiggle=g_squiggle,
+        alpha=alpha,
+        cv=cv,
+        sqrt=sqrt,
     )
     return sum(flow_rates)
 
@@ -190,7 +202,7 @@ def calculate_boiler_dp(total_flow_rate):
     """Calculate boiler differential pressure from total flow rate.
     Excel Q_max = M27 = (M25-M26)/K26^2
     """
-    N_pumps = 5
+    N_pumps = 5  # TODO: Is this correct?
     a = 0.05
     M25 = 850 / 30**2 - 0.671 / (10 * (50 ** (0.95 - 1)) ** 2) ** 2
     Q_max = (1.0 - a) * M25 / N_pumps**2
@@ -205,7 +217,7 @@ def calculate_pump_dp(
     m_pumps,
     dp_max=PUMP_DP_MAX,
     q_max=PUMP_QMAX,
-    max_speed=PUMP_SPEED_MAX,
+    speed_max=PUMP_SPEED_MAX,
     exponent=PUMP_EXPONENT,
 ):
     """Calculate pump differential pressure from speed, flow rate, and
@@ -216,10 +228,10 @@ def calculate_pump_dp(
     """
     dp = (
         dp_max
-        * ((actual_speed / max_speed) ** 2)
+        * ((actual_speed / speed_max) ** 2)
         * (
             1
-            - (total_flow_rate / m_pumps) * max_speed / (q_max * actual_speed)
+            - (total_flow_rate / m_pumps) * speed_max / (q_max * actual_speed)
         )
         ** exponent
     )
@@ -232,22 +244,51 @@ def calculate_pressure_balance(loop_dp, pump_dp, boiler_dp):
 
 
 def make_pressure_balance_function(
-    n_lines, m_pumps, sum=cas.sum1, sqrt=cas.sqrt
+    n_lines,
+    m_pumps,
+    speed_min=PUMP_SPEED_MIN,
+    speed_max=PUMP_SPEED_MAX,
+    rangeability=COLLECTOR_VALVE_RANGEABILITY,
+    g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+    alpha=COLLECTOR_VALVE_ALPHA,
+    cv=COLLECTOR_VALVE_CV,
+    dp_max=PUMP_DP_MAX,
+    q_max=PUMP_QMAX,
+    exponent=PUMP_EXPONENT,
+    sum=cas.sum1,
+    sqrt=cas.sqrt,
 ):
     """Create a CasADi function for pressure balance calculation."""
     valve_positions = cas.SX.sym("v", n_lines)
     pump_speed_scaled = cas.SX.sym("s")
     loop_dp = cas.SX.sym("dp")
 
-    actual_pump_speed = actual_pump_speed_from_scaled(pump_speed_scaled)
-
-    total_flow_rate = calculate_total_oil_flowrate(
-        valve_positions, loop_dp, sum=sum, sqrt=sqrt
+    actual_pump_speed = actual_pump_speed_from_scaled(
+        pump_speed_scaled, speed_min=speed_min, speed_max=speed_max
     )
 
-    boiler_dp = calculate_boiler_dp(total_flow_rate)
+    total_flow_rate = calculate_total_oil_flowrate(
+        valve_positions,
+        loop_dp,
+        rangeability=rangeability,
+        g_squiggle=g_squiggle,
+        alpha=alpha,
+        cv=cv,
+        sum=sum,
+        sqrt=sqrt,
+    )
 
-    pump_dp = calculate_pump_dp(actual_pump_speed, total_flow_rate, m_pumps)
+    boiler_dp = calculate_boiler_dp(total_flow_rate)  # TODO: Add params?
+
+    pump_dp = calculate_pump_dp(
+        actual_pump_speed,
+        total_flow_rate,
+        m_pumps,
+        dp_max=dp_max,
+        q_max=q_max,
+        speed_max=speed_max,
+        exponent=exponent,
+    )
 
     pressure_balance = calculate_pressure_balance(loop_dp, pump_dp, boiler_dp)
 
@@ -261,7 +302,19 @@ def make_pressure_balance_function(
 
 
 def make_calculate_pump_and_drive_power_function(
-    n_lines, m_pumps, sum=cas.sum1, sqrt=cas.sqrt
+    n_lines,
+    m_pumps,
+    speed_min=PUMP_SPEED_MIN,
+    speed_max=PUMP_SPEED_MAX,
+    rangeability=COLLECTOR_VALVE_RANGEABILITY,
+    g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+    alpha=COLLECTOR_VALVE_ALPHA,
+    cv=COLLECTOR_VALVE_CV,
+    dp_max=PUMP_DP_MAX,
+    q_max=PUMP_QMAX,
+    exponent=PUMP_EXPONENT,
+    sum=cas.sum1,
+    sqrt=cas.sqrt,
 ):
     """Create a CasADi function for pump and drive power calculation
     with pressure balance.
@@ -270,7 +323,19 @@ def make_calculate_pump_and_drive_power_function(
     pump_speed_scaled = cas.SX.sym("s")
 
     pressure_balance_function = make_pressure_balance_function(
-        n_lines, m_pumps, sum=sum, sqrt=sqrt
+        n_lines,
+        m_pumps,
+        speed_min=speed_min,
+        speed_max=speed_max,
+        rangeability=rangeability,
+        g_squiggle=g_squiggle,
+        alpha=alpha,
+        cv=cv,
+        dp_max=dp_max,
+        q_max=q_max,
+        exponent=exponent,
+        sum=sum,
+        sqrt=sqrt,
     )
 
     # Make rootfinder to solve pressure balance
@@ -284,18 +349,34 @@ def make_calculate_pump_and_drive_power_function(
     loop_dp = sol_rf["x"]
 
     flow_rates = calculate_collector_flow_rate(
-        valve_positions, loop_dp, sqrt=sqrt
+        valve_positions,
+        loop_dp,
+        rangeability=rangeability,
+        g_squiggle=g_squiggle,
+        alpha=alpha,
+        cv=cv,
+        sqrt=sqrt,
     )
 
     total_flow_rate = sum(flow_rates)
 
-    actual_pump_speed = actual_pump_speed_from_scaled(pump_speed_scaled)
+    actual_pump_speed = actual_pump_speed_from_scaled(
+        pump_speed_scaled, speed_min=speed_min, speed_max=speed_max
+    )
 
     pump_and_drive_efficiency = calculate_pump_and_drive_efficiency(
         total_flow_rate / m_pumps, actual_pump_speed
     )
 
-    pump_dp = calculate_pump_dp(actual_pump_speed, total_flow_rate, m_pumps)
+    pump_dp = calculate_pump_dp(
+        actual_pump_speed,
+        total_flow_rate,
+        m_pumps,
+        dp_max=dp_max,
+        q_max=q_max,
+        speed_max=speed_max,
+        exponent=exponent,
+    )
 
     pump_fluid_power = calculate_pump_fluid_power(total_flow_rate, pump_dp)
 
@@ -322,8 +403,8 @@ def calculate_collector_oil_exit_temp(
     solar_rate,
     loop_thermal_efficiency,
     mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
-    fluid_ho=OIL_HO,
-    fluid_rho_cp=OIL_RHO_CP,
+    h_outer=H_OUTER,
+    oil_rho_cp=OIL_RHO_CP,
     d_out=COLLECTOR_PIPE_DIAMETER_OUT,
     exp=cas.exp,
     pi=cas.pi,
@@ -333,10 +414,10 @@ def calculate_collector_oil_exit_temp(
         solar_rate
         * mirror_concentration_factor
         * loop_thermal_efficiency
-        / (2 * 1000 * fluid_ho)
+        / (2 * 1000 * h_outer)
     ) + ambient_temp
     b = a - oil_return_temp
-    tau = (flow_rate / 3600) * fluid_rho_cp / pi / fluid_ho / d_out
+    tau = (flow_rate / 3600) * oil_rho_cp / pi / h_outer / d_out
     return a - b * exp(-96 / tau)
 
 
@@ -361,10 +442,25 @@ def calculate_rms_oil_exit_temps(
 # =============================================================================
 # COMBINED SYSTEM MODEL
 # =============================================================================
-# TODO: Need to add steam generator to this
 
 
-def make_calculate_collector_exit_temps_and_pump_power(n_lines, m_pumps):
+def make_calculate_collector_exit_temps_and_pump_power(
+    n_lines,
+    m_pumps,
+    rangeability=COLLECTOR_VALVE_RANGEABILITY,
+    g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+    alpha=COLLECTOR_VALVE_ALPHA,
+    pump_speed_min=PUMP_SPEED_MIN,
+    pump_speed_max=PUMP_SPEED_MAX,
+    cv=COLLECTOR_VALVE_CV,
+    loop_thermal_efficiencies=LOOP_THERMAL_EFFICIENCIES,
+    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
+    h_outer=H_OUTER,
+    oil_rho_cp=OIL_RHO_CP,
+    d_out=COLLECTOR_PIPE_DIAMETER_OUT,
+    sum=cas.sum1,
+    sqrt=cas.sqrt,
+):
     """Create a CasADi function for complete system calculation."""
     valve_positions = cas.SX.sym("v", n_lines)
     pump_speed_scaled = cas.SX.sym("pump_speed_scaled")
@@ -374,7 +470,14 @@ def make_calculate_collector_exit_temps_and_pump_power(n_lines, m_pumps):
     loop_dp = cas.SX.sym("loop_dp")
 
     pressure_balance_function = make_pressure_balance_function(
-        n_lines, m_pumps
+        n_lines,
+        m_pumps,
+        rangeability=rangeability,
+        g_squiggle=g_squiggle,
+        alpha=alpha,
+        cv=cv,
+        sum=sum,
+        sqrt=sqrt,
     )
 
     residual = pressure_balance_function(
@@ -393,17 +496,32 @@ def make_calculate_collector_exit_temps_and_pump_power(n_lines, m_pumps):
     collector_flow_rates = calculate_collector_flow_rate(
         valve_positions,
         loop_dp_sol,
+        rangeability=COLLECTOR_VALVE_RANGEABILITY,
+        g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+        alpha=COLLECTOR_VALVE_ALPHA,
+        cv=COLLECTOR_VALVE_CV,
+        sqrt=sqrt,
     )
 
     total_flow_rate = cas.sum(collector_flow_rates)
 
-    actual_pump_speed = actual_pump_speed_from_scaled(pump_speed_scaled)
+    actual_pump_speed = actual_pump_speed_from_scaled(
+        pump_speed_scaled, speed_min=pump_speed_min, speed_max=pump_speed_max
+    )
 
     pump_and_drive_efficiency = calculate_pump_and_drive_efficiency(
         total_flow_rate / m_pumps, actual_pump_speed
     )
 
-    pump_dp = calculate_pump_dp(actual_pump_speed, total_flow_rate, m_pumps)
+    pump_dp = calculate_pump_dp(
+        actual_pump_speed,
+        total_flow_rate,
+        m_pumps,
+        dp_max=PUMP_DP_MAX,
+        q_max=PUMP_QMAX,
+        speed_max=PUMP_SPEED_MAX,
+        exponent=PUMP_EXPONENT,
+    )
 
     pump_fluid_power = calculate_pump_fluid_power(total_flow_rate, pump_dp)
 
@@ -414,7 +532,11 @@ def make_calculate_collector_exit_temps_and_pump_power(n_lines, m_pumps):
         oil_return_temp,
         ambient_temp,
         solar_rate,
-        LOOP_THERMAL_EFFICIENCIES,
+        loop_thermal_efficiencies,
+        mirror_concentration_factor=mirror_concentration_factor,
+        h_outer=h_outer,
+        oil_rho_cp=oil_rho_cp,
+        d_out=d_out,
     )
 
     return cas.Function(
@@ -771,6 +893,11 @@ def calculate_net_power(steam_power, pump_and_drive_power):
     return steam_power * GENERATOR_EFFICIENCY - pump_and_drive_power
 
 
+# =============================================================================
+# RTO SOLVERS
+# =============================================================================
+
+
 def solar_plant_gen_rto_solve(
     ambient_temp,
     solar_rate,
@@ -780,7 +907,18 @@ def solar_plant_gen_rto_solve(
     pump_speed_scaled_init=0.3,
     m_dot_init=0.75,
     oil_return_temp_init=260.0,
+    rangeability=COLLECTOR_VALVE_RANGEABILITY,
+    g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+    alpha=COLLECTOR_VALVE_ALPHA,
+    pump_speed_min=PUMP_SPEED_MIN,
+    pump_speed_max=PUMP_SPEED_MAX,
     max_oil_exit_temps=OIL_EXIT_TEMPS_SP,
+    cv=COLLECTOR_VALVE_CV,
+    loop_thermal_efficiencies=LOOP_THERMAL_EFFICIENCIES,
+    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
+    h_outer=H_OUTER,
+    oil_rho_cp=OIL_RHO_CP,
+    d_out=COLLECTOR_PIPE_DIAMETER_OUT,
     T_steam_sp=BOILER_T_STEAM_SP,
     U_steam=HX3_U_STEAM,
     U_boil=HX2_U_BOIL,
@@ -791,10 +929,11 @@ def solar_plant_gen_rto_solve(
     T_boil=BOILER_T_BOIL,
     T_condensate=BOILER_T_CONDENSATE,
     cp_steam=CP_STEAM,
-    oil_rho_cp=OIL_RHO_CP,
     h_vap=H_VAP,
     solver_name="ipopt",
     solver_opts=None,
+    sum=cas.sum1,
+    sqrt=cas.sqrt,
 ):
     """Solve the combined solar plant and steam generator RTO optimization
     problem.
@@ -878,7 +1017,23 @@ def solar_plant_gen_rto_solve(
 
     # Construct function to calculate collector exit temps and pump power
     calculate_collector_exit_temps_and_pump_power = (
-        make_calculate_collector_exit_temps_and_pump_power(n_lines, m_pumps)
+        make_calculate_collector_exit_temps_and_pump_power(
+            n_lines,
+            m_pumps,
+            rangeability=rangeability,
+            g_squiggle=g_squiggle,
+            alpha=alpha,
+            pump_speed_min=pump_speed_min,
+            pump_speed_max=pump_speed_max,
+            cv=cv,
+            loop_thermal_efficiencies=loop_thermal_efficiencies,
+            mirror_concentration_factor=mirror_concentration_factor,
+            h_outer=h_outer,
+            oil_rho_cp=oil_rho_cp,
+            d_out=d_out,
+            sum=sum,
+            sqrt=sqrt,
+        )
     )
 
     # Initialize optimization session
@@ -1149,11 +1304,6 @@ def steam_generator_solve(
     return sol, variables
 
 
-# =============================================================================
-# RTO SOLVER
-# =============================================================================
-
-
 def solar_plant_rto_solve(
     solar_rate,
     ambient_temp,
@@ -1162,7 +1312,20 @@ def solar_plant_rto_solve(
     n_lines,
     valve_positions_init=0.9,
     pump_speed_scaled_init=0.3,
+    rangeability=COLLECTOR_VALVE_RANGEABILITY,
+    g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+    alpha=COLLECTOR_VALVE_ALPHA,
+    pump_speed_min=PUMP_SPEED_MIN,
+    pump_speed_max=PUMP_SPEED_MAX,
+    cv=COLLECTOR_VALVE_CV,
+    loop_thermal_efficiencies=LOOP_THERMAL_EFFICIENCIES,
+    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
+    h_outer=H_OUTER,
+    oil_rho_cp=OIL_RHO_CP,
+    d_out=COLLECTOR_PIPE_DIAMETER_OUT,
     max_oil_exit_temps=OIL_EXIT_TEMPS_SP,
+    sum=cas.sum1,
+    sqrt=cas.sqrt,
     solver_name="ipopt",
     solver_opts=None,
 ):
@@ -1219,7 +1382,23 @@ def solar_plant_rto_solve(
 
     # Construct system model calculation function
     calculate_collector_exit_temps_and_pump_power = (
-        make_calculate_collector_exit_temps_and_pump_power(n_lines, m_pumps)
+        make_calculate_collector_exit_temps_and_pump_power(
+            n_lines,
+            m_pumps,
+            rangeability=rangeability,
+            g_squiggle=g_squiggle,
+            alpha=alpha,
+            pump_speed_min=pump_speed_min,
+            pump_speed_max=pump_speed_max,
+            cv=cv,
+            loop_thermal_efficiencies=loop_thermal_efficiencies,
+            mirror_concentration_factor=mirror_concentration_factor,
+            h_outer=h_outer,
+            oil_rho_cp=oil_rho_cp,
+            d_out=d_out,
+            sum=sum,
+            sqrt=sqrt,
+        )
     )
 
     max_oil_exit_temps = cas.DM(max_oil_exit_temps)
@@ -1254,6 +1433,7 @@ def solar_plant_rto_solve(
     )
 
     # Carnot cycle work output
+    # TODO: Make this into a function
     potential_work = (
         total_flow_rate
         * OIL_RHO_CP
