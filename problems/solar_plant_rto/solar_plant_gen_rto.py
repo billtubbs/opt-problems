@@ -49,12 +49,14 @@ RTO Solvers
 import casadi as cas
 
 # =============================================================================
-# DEFAULT CONSTANTS
+# DEFAULT PARAMETERS & CONSTANTS
 # =============================================================================
 
 # Collector lines
-COLLECTOR_PIPE_DIAMETER_INT = 0.066  # m
-COLLECTOR_PIPE_DIAMETER_OUT = 0.07  # m
+COLLECTOR_D_INT = 0.066  # m
+COLLECTOR_D_OUT = 0.07  # m
+
+# Collector FCV parameters
 COLLECTOR_VALVE_RANGEABILITY = 50.0
 COLLECTOR_VALVE_G_SQUIGGLE = 0.671
 COLLECTOR_VALVE_ALPHA = 0.05 * (
@@ -73,6 +75,7 @@ PUMP_QMAX = 224.6293
 PUMP_EXPONENT = 4.346734
 
 # Oil Properties
+# TODO: No longer finds feasible solution with these values
 OIL_RHO = 636.52  # Kg/m^3
 OIL_RHO_CP = OIL_RHO * 2.138  # kJ/m^3-K
 
@@ -405,7 +408,7 @@ def calculate_collector_oil_exit_temp(
     mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
     h_outer=H_OUTER,
     oil_rho_cp=OIL_RHO_CP,
-    d_out=COLLECTOR_PIPE_DIAMETER_OUT,
+    d_out=COLLECTOR_D_OUT,
     exp=cas.exp,
     pi=cas.pi,
 ):
@@ -457,7 +460,7 @@ def make_calculate_collector_exit_temps_and_pump_power(
     mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
     h_outer=H_OUTER,
     oil_rho_cp=OIL_RHO_CP,
-    d_out=COLLECTOR_PIPE_DIAMETER_OUT,
+    d_out=COLLECTOR_D_OUT,
     sum=cas.sum1,
     sqrt=cas.sqrt,
 ):
@@ -918,7 +921,7 @@ def solar_plant_gen_rto_solve(
     mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
     h_outer=H_OUTER,
     oil_rho_cp=OIL_RHO_CP,
-    d_out=COLLECTOR_PIPE_DIAMETER_OUT,
+    d_out=COLLECTOR_D_OUT,
     T_steam_sp=BOILER_T_STEAM_SP,
     U_steam=HX3_U_STEAM,
     U_boil=HX2_U_BOIL,
@@ -1322,7 +1325,7 @@ def solar_plant_rto_solve(
     mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
     h_outer=H_OUTER,
     oil_rho_cp=OIL_RHO_CP,
-    d_out=COLLECTOR_PIPE_DIAMETER_OUT,
+    d_out=COLLECTOR_D_OUT,
     max_oil_exit_temps=OIL_EXIT_TEMPS_SP,
     sum=cas.sum1,
     sqrt=cas.sqrt,
