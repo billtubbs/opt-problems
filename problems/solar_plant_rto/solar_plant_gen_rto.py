@@ -132,7 +132,7 @@ HX1_U_LIQUID = 900.0  # W/m^2-K
 HX2_U_BOIL = 3000.0  # W/m^2-K
 HX3_U_STEAM = 1000.0  # W/m^2-K
 F_OIL_NOMINAL = 200.0 / 3600.0  # m^3/s
-
+TURBINE_DELTA_H = 3049.0 - 2207.0  # kJ/kg
 
 # =============================================================================
 # PUMP AND FLOW CALCULATIONS
@@ -142,7 +142,7 @@ F_OIL_NOMINAL = 200.0 / 3600.0  # m^3/s
 def actual_pump_speed_from_scaled(
     speed_scaled, speed_min=PUMP_SPEED_MIN, speed_max=PUMP_SPEED_MAX
 ):
-    """Convert scaled pump speed (0.2-1.0) to actual speed (rpm)."""
+    """Convert scaled pump speed (0.3-1.0) to actual speed (rpm)."""
     return speed_min + (speed_scaled - 0.3) * (speed_max - speed_min) / 0.7
 
 
@@ -820,7 +820,7 @@ def heat_exchanger_solution_error(
         T_condensate: Condensate temperature (deg C)
         cp_steam: Specific heat capacity of steam (kJ/kg-K)
         h_vap: Heat of vaporization (kJ/kg)
-        log: Logarithm function (for CasADi compatibility)
+        log: Provide an alternate function for log operations
 
     Returns:
         Error value (zero when sum of areas equals total available area)
@@ -882,18 +882,22 @@ def heat_exchanger_solution_error(
     return hx_area - hx1_area - hx2_area - hx3_area
 
 
-def calculate_steam_power(m_dot):
+def calculate_steam_power(m_dot, turbine_delta_h=TURBINE_DELTA_H):
     """Calculate steam power (kW).
     Excel BI33.
     """
-    return m_dot * (3049.0 - 2207.0)
+    return m_dot * turbine_delta_h
 
 
-def calculate_net_power(steam_power, pump_and_drive_power):
+def calculate_net_power(
+    steam_power,
+    pump_and_drive_power,
+    generator_efficiency=GENERATOR_EFFICIENCY,
+):
     """Calculate net power output from steam power and pump power.
     Excel BI37: =BI33*BI34-BI35/BI36
     """
-    return steam_power * GENERATOR_EFFICIENCY - pump_and_drive_power
+    return steam_power * generator_efficiency - pump_and_drive_power
 
 
 # =============================================================================
@@ -931,6 +935,7 @@ def solar_plant_gen_rto_solve(
     cp_water=CP_WATER,
     T_boil=BOILER_T_BOIL,
     T_condensate=BOILER_T_CONDENSATE,
+    turbine_delta_h=TURBINE_DELTA_H,
     cp_steam=CP_STEAM,
     h_vap=H_VAP,
     solver_name="ipopt",
@@ -966,8 +971,30 @@ def solar_plant_gen_rto_solve(
         Initial guess for steam mass flow rate (kg/s) (default: 1.2)
     oil_return_temp_init : float, optional
         Initial guess for oil return temperature (deg C) (default: 270.0)
+    rangeability : float, optional
+        Valve rangeability parameter
+    g_squiggle : float, optional
+        Valve flow characteristic parameter
+    alpha : float, optional
+        Valve alpha parameter
+    pump_speed_min : float, optional
+        Minimum pump speed (RPM)
+    pump_speed_max : float, optional
+        Maximum pump speed (RPM)
     max_oil_exit_temps : float or array, optional
         Maximum oil exit temperatures for each line (deg C)
+    cv : float, optional
+        Valve flow coefficient
+    loop_thermal_efficiencies : list or array, optional
+        Thermal efficiency for each collector loop
+    mirror_concentration_factor : float, optional
+        Mirror concentration factor
+    h_outer : float, optional
+        Outer heat transfer coefficient (kW/m^2-K)
+    oil_rho_cp : float, optional
+        Oil volumetric heat capacity (kJ/m^3-K)
+    d_out : float, optional
+        Outer diameter of collector tube (m)
     T_steam_sp : float, optional
         Steam setpoint temperature (deg C)
     U_steam : float, optional
@@ -986,16 +1013,20 @@ def solar_plant_gen_rto_solve(
         Boiling temperature (deg C)
     T_condensate : float, optional
         Condensate temperature (deg C)
+    turbine_delta_h : float, optional
+        Turbine enthalpy drop (kJ/kg)
     cp_steam : float, optional
         Specific heat capacity of steam (kJ/kg-K)
-    oil_rho_cp : float, optional
-        Oil volumetric heat capacity (kJ/m^3-K)
     h_vap : float, optional
         Heat of vaporization (kJ/kg)
     solver_name : str, optional
         Name of the optimizer (default: 'ipopt')
     solver_opts : dict, optional
         Solver options dictionary
+    sum : function, optional
+        Provide an alternate function for sum operations
+    sqrt : function, optional
+        Provide an alternate function for sqrt operations
 
     Returns
     -------
@@ -1100,7 +1131,7 @@ def solar_plant_gen_rto_solve(
     )
 
     # Calculate other output variables
-    steam_power = calculate_steam_power(m_dot)
+    steam_power = calculate_steam_power(m_dot, turbine_delta_h=turbine_delta_h)
     net_power = calculate_net_power(steam_power, pump_and_drive_power)
 
     # Collector and pump constraints
@@ -1164,6 +1195,7 @@ def steam_generator_solve(
     cp_water=CP_WATER,
     T_boil=BOILER_T_BOIL,
     T_condensate=BOILER_T_CONDENSATE,
+    turbine_delta_h=TURBINE_DELTA_H,
     cp_steam=CP_STEAM,
     oil_rho_cp=OIL_RHO_CP,
     h_vap=H_VAP,
@@ -1202,6 +1234,8 @@ def steam_generator_solve(
         Boiling temperature (deg C)
     T_condensate : float, optional
         Condensate temperature (deg C)
+    turbine_delta_h : float, optional
+        Turbine enthalpy drop (kJ/kg)
     cp_steam : float, optional
         Specific heat capacity of steam (kJ/kg-K)
     oil_rho_cp : float, optional
@@ -1270,7 +1304,7 @@ def steam_generator_solve(
     )
 
     # Calculate steam power
-    steam_power = calculate_steam_power(m_dot)
+    steam_power = calculate_steam_power(m_dot, turbine_delta_h=turbine_delta_h)
 
     # Temperature constraints to avoid NaN in DTLM calculations
     if not mixed_oil_exit_temp > T_steam_sp:
@@ -1354,8 +1388,34 @@ def solar_plant_rto_solve(
         Initial valve positions (default: 0.55)
     pump_speed_scaled_init : float, optional
         Initial scaled pump speed (default: 0.6)
+    rangeability : float, optional
+        Valve rangeability parameter
+    g_squiggle : float, optional
+        Valve flow characteristic parameter
+    alpha : float, optional
+        Valve alpha parameter
+    pump_speed_min : float, optional
+        Minimum pump speed (RPM)
+    pump_speed_max : float, optional
+        Maximum pump speed (RPM)
+    cv : float, optional
+        Valve flow coefficient
+    loop_thermal_efficiencies : list or array, optional
+        Thermal efficiency for each collector loop
+    mirror_concentration_factor : float, optional
+        Mirror concentration factor
+    h_outer : float, optional
+        Outer heat transfer coefficient (kW/m^2-K)
+    oil_rho_cp : float, optional
+        Oil volumetric heat capacity (kJ/m^3-K)
+    d_out : float, optional
+        Outer diameter of collector tube (m)
     max_oil_exit_temps : list or array, optional
         Maximum oil exit temperatures for each line (deg C)
+    sum : function, optional
+        Provide an alternate function for sum operations
+    sqrt : function, optional
+        Provide an alternate function for sqrt operations
     solver_name : str, optional
         Name of the optimizer (default: 'ipopt')
     solver_opts : dict, optional

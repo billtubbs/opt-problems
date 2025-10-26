@@ -23,6 +23,7 @@ from problems.solar_plant_rto.solar_plant_gen_rto import (
     calculate_pump_dp,
     calculate_pump_fluid_power,
     calculate_rms_oil_exit_temps,
+    calculate_steam_power,
     calculate_total_oil_flowrate,
     heat_exchanger_solution_error,
     make_calculate_collector_exit_temps_and_pump_power,
@@ -68,6 +69,7 @@ test_params = {
     "U_liquid": 900.0,  # W/m^2-K
     "hx_area": 0.25,  # m^2
     "F_oil_nominal": 200.0 / 3600.0,  # m^3/s
+    "turbine_delta_h": 3049.0 - 2207.0,  # kJ/kg
     # Temperature constraints
     "max_oil_exit_temps": (
         395.0,
@@ -558,6 +560,13 @@ class TestSteamGeneratorModel:
             log=np.log,
         )
         assert np.isclose(error, 0.0, atol=1e-7)
+
+    def test_calculate_steam_power(self):
+        """Test steam power calculation."""
+        m_dot = test_data["m_dot"]
+        turbine_delta_h = test_params["turbine_delta_h"]
+        steam_power = calculate_steam_power(m_dot, turbine_delta_h=turbine_delta_h)
+        assert np.isclose(steam_power, test_data["steam_power"])
 
     def test_calculate_net_power(self):
         """Test net power calculation."""
