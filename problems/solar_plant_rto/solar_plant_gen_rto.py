@@ -75,7 +75,6 @@ PUMP_QMAX = 224.6293
 PUMP_EXPONENT = 4.346734
 
 # Oil Properties
-# TODO: No longer finds feasible solution with these values
 OIL_RHO = 636.52  # Kg/m^3
 OIL_RHO_CP = OIL_RHO * 2.138  # kJ/m^3-K
 
