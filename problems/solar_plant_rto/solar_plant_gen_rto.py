@@ -6,6 +6,16 @@ plant with collector loops, power generation and thermal oil circulation.
 Functions
 ---------
 
+Fluid Property Functions
+    calculate_fluid_density
+    calculate_fluid_viscosity
+    calculate_fluid_heat_capacity
+    calculate_fluid_thermal_conductivity
+    calculate_reynolds_number
+    calculate_prandtl_number
+    calculate_heat_transfer_coefficient_nusselt
+    calculate_heat_transfer_coefficient_turbulent
+
 Pump and Flow Calculations
     actual_pump_speed_from_scaled
     calculate_pump_and_drive_efficiency
@@ -20,6 +30,7 @@ Pump and Flow Calculations
 
 Collector Line Temperature Calculations
     calculate_collector_oil_exit_temp
+    calculate_collector_oil_exit_and_mean_temps
     calculate_mixed_oil_exit_temp
     calculate_rms_oil_exit_temps
 
@@ -44,6 +55,7 @@ RTO Solvers
     solar_plant_gen_rto_solve
     steam_generator_solve
     solar_plant_rto_solve
+    solar_plant_gen_db_rto_solve
 """
 
 import casadi as cas
@@ -151,37 +163,49 @@ TURBINE_DELTA_H = 3049.0 - 2207.0  # kJ/kg
 # =============================================================================
 
 
-def calculate_fluid_density(T_C, a0=OIL_RHO_A0, a1=OIL_RHO_A1):
-    return a0 + a1 * T_C
+def calculate_fluid_density(T_K, a0=OIL_RHO_A0, a1=OIL_RHO_A1):
+    """Linear approximation for Syltherm800 density (kg/m³) fitted to
+    data, valid for temperatures in the range 200 to 400°C.
+    """
+    return a0 + a1 * T_K
 
 
 def calculate_fluid_viscosity(
-    T_C, A=OIL_VISCOSITY_A, B=OIL_VISCOSITY_B, C=OIL_VISCOSITY_C, exp=cas.exp
+    T_K, A=OIL_VISCOSITY_A, B=OIL_VISCOSITY_B, C=OIL_VISCOSITY_C, exp=cas.exp
 ):
-    return A * exp(B / T_C) + C
+    """Exponential approximation for Syltherm800 dynamic viscosity (Pa·s)
+    fitted to data, valid for temperatures in the range 200 to 400°C.
+    """
+    return A * exp(B / T_K) + C
 
 
-def calculate_fluid_heat_capacity(T_C, a0=OIL_CP_A0, a1=OIL_CP_A1):
-    return a0 + a1 * T_C
+def calculate_fluid_heat_capacity(T_K, a0=OIL_CP_A0, a1=OIL_CP_A1):
+    """Linear approximation for Syltherm800 specific heat capacity (J/kg-K)
+    fitted to data, valid for temperatures in the range 200 to 400°C.
+    """
+    return a0 + a1 * T_K
 
 
 def calculate_fluid_thermal_conductivity(
-    T_C, a0=OIL_CONDUCTIVITY_A0, a1=OIL_CONDUCTIVITY_A1
+    T_K, a0=OIL_CONDUCTIVITY_A0, a1=OIL_CONDUCTIVITY_A1
 ):
-    return a0 + a1 * T_C
+    """Linear approximation for Syltherm800 thermal conductivity (W/m-K)
+    fitted to data, valid for temperatures in the range 200 to 400°C.
+    """
+    return a0 + a1 * T_K
 
 
 def calculate_reynolds_number(
     velocity, pipe_diameter, fluid_density, fluid_viscosity
 ):
-    """Calculate Reynolds number for pipe flow"""
+    """Calculate Reynolds number for pipe flow."""
     return fluid_density * velocity * pipe_diameter / fluid_viscosity
 
 
 def calculate_prandtl_number(
     fluid_viscosity, fluid_specific_heat, fluid_thermal_conductivity
 ):
-    """Calculate Prandtl number for fluid"""
+    """Calculate Prandtl number for fluid."""
     return fluid_viscosity * fluid_specific_heat / fluid_thermal_conductivity
 
 
