@@ -74,9 +74,22 @@ PUMP_DP_MAX = 1004.2368
 PUMP_QMAX = 224.6293
 PUMP_EXPONENT = 4.346734
 
-# Oil Properties
-OIL_RHO = 636.52  # Kg/m^3
-OIL_RHO_CP = OIL_RHO * 2.138  # kJ/m^3-K
+# Oil properties - static
+OIL_RHO = 636.52  # Kg/m^3 (Syltherm800 at 330 deg C)
+OIL_RHO_CP = OIL_RHO * 2.138  # kJ/m^3-K (Syltherm800 at 330 deg C)
+
+# Time-varying property correlations for Syltherm800
+OIL_T_min_C = 200  # degC
+OIL_T_max_C = 400  # degC
+OIL_RHO_A0 = 1312.3439956092
+OIL_RHO_A1 = -1.1259259736573723
+OIL_CP_A0 = 1108.027261915654
+OIL_CP_A1 = 1.707142857126835
+OIL_CONDUCTIVITY_A0 = 0.19090761573601903
+OIL_CONDUCTIVITY_A1 = -0.00018939883743798126
+OIL_VISCOSITY_A = 3.940589927031612e-05
+OIL_VISCOSITY_B = 1636.9992862433103
+OIL_VISCOSITY_C = -0.00021147616722260807
 
 # Power generator
 GENERATOR_EFFICIENCY = 0.85
@@ -132,6 +145,143 @@ HX2_U_BOIL = 3000.0  # W/m^2-K
 HX3_U_STEAM = 1000.0  # W/m^2-K
 F_OIL_NOMINAL = 200.0 / 3600.0  # m^3/s
 TURBINE_DELTA_H = 3049.0 - 2207.0  # kJ/kg
+
+# =============================================================================
+# THERMAL FLUID PROPERTIES
+# =============================================================================
+
+
+def calculate_fluid_density(T_C, a0=OIL_RHO_A0, a1=OIL_RHO_A1):
+    return a0 + a1 * T_C
+
+
+def calculate_fluid_viscosity(
+    T_C, A=OIL_VISCOSITY_A, B=OIL_VISCOSITY_B, C=OIL_VISCOSITY_C, exp=cas.exp
+):
+    return A * exp(B / T_C) + C
+
+
+def calculate_fluid_heat_capacity(T_C, a0=OIL_CP_A0, a1=OIL_CP_A1):
+    return a0 + a1 * T_C
+
+
+def calculate_fluid_thermal_conductivity(
+    T_C, a0=OIL_CONDUCTIVITY_A0, a1=OIL_CONDUCTIVITY_A1
+):
+    return a0 + a1 * T_C
+
+
+def calculate_reynolds_number(
+    velocity, pipe_diameter, fluid_density, fluid_viscosity
+):
+    """Calculate Reynolds number for pipe flow"""
+    return fluid_density * velocity * pipe_diameter / fluid_viscosity
+
+
+def calculate_prandtl_number(
+    fluid_viscosity, fluid_specific_heat, fluid_thermal_conductivity
+):
+    """Calculate Prandtl number for fluid"""
+    return fluid_viscosity * fluid_specific_heat / fluid_thermal_conductivity
+
+
+def calculate_heat_transfer_coefficient_nusselt(
+    pipe_diameter, fluid_thermal_conductivity, Nu
+):
+    """Calculate internal heat transfer coefficient for laminar flow
+    in a pipe.
+
+    Valid range:
+    - 0.7 ≤ Pr ≤ 160
+    - Re > 10,000 (but works reasonably well down to Re ≈ 4000)
+    - L/D > 10 (fully developed flow)
+    """
+
+    # Heat transfer coefficient
+    h = Nu * fluid_thermal_conductivity / pipe_diameter
+
+    return h
+
+
+def calculate_heat_transfer_coefficient_turbulent(
+    velocity,
+    pipe_diameter,
+    fluid_density,
+    fluid_viscosity,
+    fluid_thermal_conductivity,
+    fluid_specific_heat,
+):
+    """
+    Calculate internal heat transfer coefficient in a pipe using
+    Dittus-Boelter correlation.
+
+    The Dittus-Boelter correlation is widely used for turbulent flow in
+    smooth pipes with moderate temperature differences. It provides
+    sufficient accuracy (±25%) for most engineering applications.
+
+    Parameters:
+    -----------
+    velocity : float
+        Fluid velocity [m/s]
+    pipe_diameter : float
+        Pipe inner diameter [m]
+    fluid_density : float
+        Fluid density [kg/m³]
+    fluid_viscosity : float
+        Dynamic viscosity [Pa·s]
+    fluid_thermal_conductivity : float
+        Thermal conductivity [W/m·K]
+    fluid_specific_heat : float
+        Specific heat capacity [J/kg·K]
+
+    Returns:
+    --------
+    h : float
+        Heat transfer coefficient [W/m²·K]
+    Re : float
+        Reynolds number [-]
+    Pr : float
+        Prandtl number [-]
+    Nu : float
+        Nusselt number [-]
+
+    Notes:
+    ------
+    - Reynolds number: Re = ρ*v*D/μ (inertial forces / viscous forces)
+    - Prandtl number: Pr = μ*cp/k (momentum diffusivity / thermal diffusivity)
+    - Nusselt number: Nu = h*D/k (convective / conductive heat transfer)
+
+    Correlations used:
+    - Turbulent flow (Re > 4000): Nu = 0.023 * Re^0.8 * Pr^0.4
+
+    For Laminar flow (Re ≤ 4000), use Nu = 4.36 and call
+    calculate_heat_transfer_coefficient_nusselt directly.
+
+    Valid range:
+    - 0.7 ≤ Pr ≤ 160
+    - Re > 10,000 (but works reasonably well down to Re ≈ 4000)
+    - L/D > 10 (fully developed flow)
+    """
+    # Reynolds number
+    Re = calculate_reynolds_number(
+        velocity, pipe_diameter, fluid_density, fluid_viscosity
+    )
+
+    # Prandtl number
+    Pr = calculate_prandtl_number(
+        fluid_viscosity, fluid_specific_heat, fluid_thermal_conductivity
+    )
+
+    # Nusselt number (Dittus-Boelter correlation)
+    Nu = 0.023 * Re**0.8 * Pr**0.4
+
+    # Heat transfer coefficient
+    h = calculate_heat_transfer_coefficient_nusselt(
+        pipe_diameter, fluid_thermal_conductivity, Nu
+    )
+
+    return h, Re, Pr, Nu
+
 
 # =============================================================================
 # PUMP AND FLOW CALCULATIONS
@@ -400,7 +550,7 @@ def make_calculate_pump_and_drive_power_function(
 
 def calculate_collector_oil_exit_temp(
     flow_rate,
-    oil_return_temp,
+    inlet_temp,
     ambient_temp,
     solar_rate,
     loop_thermal_efficiency,
@@ -412,15 +562,45 @@ def calculate_collector_oil_exit_temp(
     pi=cas.pi,
 ):
     """Calculate oil exit temperature for a collector loop."""
-    a = (
+    equil_temp = (
         solar_rate
         * mirror_concentration_factor
         * loop_thermal_efficiency
         / (2 * 1000 * h_outer)
     ) + ambient_temp
-    b = a - oil_return_temp
     tau = (flow_rate / 3600) * oil_rho_cp / pi / h_outer / d_out
-    return a - b * exp(-96 / tau)
+    alpha = -96 / tau
+    exit_temp = equil_temp - (equil_temp - inlet_temp) * exp(alpha)
+    return exit_temp
+
+
+def calculate_collector_oil_exit_and_mean_temps(
+    flow_rate,
+    inlet_temp,
+    ambient_temp,
+    solar_rate,
+    loop_thermal_efficiency,
+    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
+    h_outer=H_OUTER,
+    oil_rho_cp=OIL_RHO_CP,
+    d_out=COLLECTOR_D_OUT,
+    exp=cas.exp,
+    pi=cas.pi,
+):
+    """Calculate oil exit temperature for a collector loop."""
+    equil_temp = (
+        solar_rate
+        * mirror_concentration_factor
+        * loop_thermal_efficiency
+        / (2 * 1000 * h_outer)
+    ) + ambient_temp
+    tau = (flow_rate / 3600) * oil_rho_cp / pi / h_outer / d_out
+    alpha = 96 / tau
+    exp_m_alpha = exp(-alpha)
+    exit_temp = equil_temp - (equil_temp - inlet_temp) * exp_m_alpha
+    f = (alpha - 1 + exp_m_alpha) / (alpha * (1 - exp_m_alpha))
+    mean_temp = inlet_temp + f * (exit_temp - inlet_temp)
+    return exit_temp, mean_temp
 
 
 def calculate_mixed_oil_exit_temp(oil_exit_temps, oil_flow_rates, sum=cas.sum):
@@ -1550,6 +1730,283 @@ def solar_plant_rto_solve(
         "f": f,
         "grad_f": grad_f,
         "hess_f": hess_f,
+    }
+
+    return sol, variables
+
+
+def solar_plant_gen_db_rto_solve(
+    ambient_temp,
+    solar_rate,
+    n_lines,
+    m_pumps,
+    valve_positions_init=0.9,
+    pump_speed_scaled_init=0.3,
+    m_dot_init=0.75,
+    oil_return_temp_init=260.0,
+    rangeability=COLLECTOR_VALVE_RANGEABILITY,
+    g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+    alpha=COLLECTOR_VALVE_ALPHA,
+    pump_speed_min=PUMP_SPEED_MIN,
+    pump_speed_max=PUMP_SPEED_MAX,
+    max_oil_exit_temps=OIL_EXIT_TEMPS_SP,
+    cv=COLLECTOR_VALVE_CV,
+    loop_thermal_efficiencies=LOOP_THERMAL_EFFICIENCIES,
+    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
+    h_outer=H_OUTER,
+    oil_rho_cp=OIL_RHO_CP,
+    d_out=COLLECTOR_D_OUT,
+    T_steam_sp=BOILER_T_STEAM_SP,
+    U_steam=HX3_U_STEAM,
+    U_boil=HX2_U_BOIL,
+    U_liquid=HX1_U_LIQUID,
+    hx_area=HX_AREA,
+    F_oil_nominal=F_OIL_NOMINAL,
+    cp_water=CP_WATER,
+    T_boil=BOILER_T_BOIL,
+    T_condensate=BOILER_T_CONDENSATE,
+    turbine_delta_h=TURBINE_DELTA_H,
+    cp_steam=CP_STEAM,
+    h_vap=H_VAP,
+    solver_name="ipopt",
+    solver_opts=None,
+    sum=cas.sum1,
+    sqrt=cas.sqrt,
+):
+    """Solve the combined solar plant and steam generator RTO optimization
+    problem.
+
+    Optimizes valve positions, pump speed, oil return temperature, and steam
+    mass flow rate to maximize net power while satisfying heat exchanger area
+    and temperature constraints.
+
+    This function integrates the collector field optimization with the steam
+    generator, solving for all decision variables simultaneously.
+
+    Parameters
+    ----------
+    ambient_temp : float
+        Ambient temperature (deg C)
+    solar_rate : float
+        Solar irradiation rate (W/m^2)
+    n_lines : int
+        Number of collector lines
+    m_pumps : int
+        Number of pumps operating
+    valve_positions_init : float or array, optional
+        Initial valve positions (default: 0.75)
+    pump_speed_scaled_init : float, optional
+        Initial scaled pump speed (default: 0.5)
+    m_dot_init : float, optional
+        Initial guess for steam mass flow rate (kg/s) (default: 1.2)
+    oil_return_temp_init : float, optional
+        Initial guess for oil return temperature (deg C) (default: 270.0)
+    rangeability : float, optional
+        Valve rangeability parameter
+    g_squiggle : float, optional
+        Valve flow characteristic parameter
+    alpha : float, optional
+        Valve alpha parameter
+    pump_speed_min : float, optional
+        Minimum pump speed (RPM)
+    pump_speed_max : float, optional
+        Maximum pump speed (RPM)
+    max_oil_exit_temps : float or array, optional
+        Maximum oil exit temperatures for each line (deg C)
+    cv : float, optional
+        Valve flow coefficient
+    loop_thermal_efficiencies : list or array, optional
+        Thermal efficiency for each collector loop
+    mirror_concentration_factor : float, optional
+        Mirror concentration factor
+    h_outer : float, optional
+        Outer heat transfer coefficient (kW/m^2-K)
+    oil_rho_cp : float, optional
+        Oil volumetric heat capacity (kJ/m^3-K)
+    d_out : float, optional
+        Outer diameter of collector tube (m)
+    T_steam_sp : float, optional
+        Steam setpoint temperature (deg C)
+    U_steam : float, optional
+        Nominal heat transfer coefficient for steam (W/m^2-K)
+    U_boil : float, optional
+        Nominal heat transfer coefficient for boiling (W/m^2-K)
+    U_liquid : float, optional
+        Nominal heat transfer coefficient for liquid (W/m^2-K)
+    hx_area : float, optional
+        Total available heat exchanger area (m^2)
+    F_oil_nominal : float, optional
+        Nominal oil flow rate for U coefficient (m^3/s)
+    cp_water : float, optional
+        Specific heat capacity of water (kJ/kg-K)
+    T_boil : float, optional
+        Boiling temperature (deg C)
+    T_condensate : float, optional
+        Condensate temperature (deg C)
+    turbine_delta_h : float, optional
+        Turbine enthalpy drop (kJ/kg)
+    cp_steam : float, optional
+        Specific heat capacity of steam (kJ/kg-K)
+    h_vap : float, optional
+        Heat of vaporization (kJ/kg)
+    solver_name : str, optional
+        Name of the optimizer (default: 'ipopt')
+    solver_opts : dict, optional
+        Solver options dictionary
+    sum : function, optional
+        Provide an alternate function for sum operations
+    sqrt : function, optional
+        Provide an alternate function for sqrt operations
+
+    Returns
+    -------
+    sol : OptiSol
+        CasADi optimization solution object
+    variables : dict
+        Dictionary containing optimized variables and outputs including:
+        - valve_positions: Optimal valve positions
+        - pump_speed_scaled: Optimal scaled pump speed
+        - collector_flow_rates: Flow rates for each collector line (kg/s)
+        - oil_exit_temps: Oil exit temperatures for each collector line (deg C)
+        - oil_return_temp: Optimal oil return temperature (deg C)
+        - m_dot: Optimal steam mass flow rate (kg/s)
+        - T1, T2, Tr: Oil temperatures through heat exchangers (deg C)
+        - pump_and_drive_power: Pump and drive power (kW)
+        - steam_power: Steam power output (kW)
+        - net_power: Net power output (kW)
+        - hx_area_error: Heat exchanger area constraint residual
+    """
+    if solver_opts is None:
+        solver_opts = {}
+
+    # Construct function to calculate collector exit temps and pump power
+    calculate_collector_exit_temps_and_pump_power = (
+        make_calculate_collector_exit_temps_and_pump_power(
+            n_lines,
+            m_pumps,
+            rangeability=rangeability,
+            g_squiggle=g_squiggle,
+            alpha=alpha,
+            pump_speed_min=pump_speed_min,
+            pump_speed_max=pump_speed_max,
+            cv=cv,
+            loop_thermal_efficiencies=loop_thermal_efficiencies,
+            mirror_concentration_factor=mirror_concentration_factor,
+            h_outer=h_outer,
+            oil_rho_cp=oil_rho_cp,
+            d_out=d_out,
+            sum=sum,
+            sqrt=sqrt,
+        )
+    )
+
+    # Initialize optimization session
+    opti = cas.Opti()
+
+    # Decision variables
+    valve_positions = opti.variable(n_lines)
+    pump_speed_scaled = opti.variable()
+    oil_return_temp = opti.variable()
+    m_dot = opti.variable()
+
+    collector_flow_rates, pump_and_drive_power, oil_exit_temps = (
+        calculate_collector_exit_temps_and_pump_power(
+            valve_positions,
+            pump_speed_scaled,
+            oil_return_temp,
+            ambient_temp,
+            solar_rate,
+        )
+    )
+
+    mixed_oil_exit_temp = calculate_mixed_oil_exit_temp(
+        oil_exit_temps, collector_flow_rates
+    )
+    oil_flow_rate = cas.sum(collector_flow_rates)
+
+    # Calculate intermediate temperatures
+    T1, T2, Tr = calculate_hx_temperatures(
+        m_dot,
+        mixed_oil_exit_temp,
+        oil_flow_rate,
+        cp_steam=cp_steam,
+        T_steam_sp=T_steam_sp,
+        T_boil=T_boil,
+        cp_water=cp_water,
+        T_condensate=T_condensate,
+        h_vap=h_vap,
+        oil_rho_cp=oil_rho_cp,
+    )
+
+    # Calculate heat exchanger area constraint error
+    hx_area_error = heat_exchanger_solution_error(
+        T1,
+        T2,
+        Tr,
+        m_dot,
+        oil_flow_rate,
+        mixed_oil_exit_temp,
+        T_steam_sp=T_steam_sp,
+        U_steam=U_steam,
+        U_boil=U_boil,
+        U_liquid=U_liquid,
+        hx_area=hx_area,
+        F_oil_nominal=F_oil_nominal,
+        cp_water=cp_water,
+        T_boil=T_boil,
+        T_condensate=T_condensate,
+        cp_steam=cp_steam,
+        h_vap=h_vap,
+        log=cas.log,
+    )
+
+    # Calculate other output variables
+    steam_power = calculate_steam_power(m_dot, turbine_delta_h=turbine_delta_h)
+    net_power = calculate_net_power(steam_power, pump_and_drive_power)
+
+    # Collector and pump constraints
+    opti.subject_to(opti.bounded(0.1, valve_positions, 1.0))
+    opti.subject_to(opti.bounded(0.2, pump_speed_scaled, 1.0))
+    opti.subject_to(oil_exit_temps < max_oil_exit_temps)
+
+    # Temperature constraints to avoid NaN in DTLM calculations
+    opti.subject_to(mixed_oil_exit_temp > T_steam_sp)  # For HX1
+    opti.subject_to(T1 > T_boil)  # For HX1 and HX2
+    opti.subject_to(T2 > T_boil)  # For HX2 and HX3 (critical constraint)
+    opti.subject_to(Tr > T_condensate)  # For HX3
+    opti.subject_to(T1 > T2)  # For HX2
+
+    # Heat exchanger area constraint
+    opti.subject_to(hx_area_error == 0)
+    opti.subject_to(oil_return_temp == Tr)
+
+    # Cost function - maximize net power generation
+    opti.minimize(-net_power)
+
+    # Set initial values
+    opti.set_initial(m_dot, m_dot_init)
+    opti.set_initial(valve_positions, valve_positions_init)
+    opti.set_initial(pump_speed_scaled, pump_speed_scaled_init)
+    opti.set_initial(oil_return_temp, oil_return_temp_init)
+
+    # Solver options
+    opti.solver(solver_name, solver_opts)
+    sol = opti.solve()
+
+    variables = {
+        "valve_positions": opti.value(valve_positions),
+        "pump_speed_scaled": opti.value(pump_speed_scaled),
+        "collector_flow_rates": opti.value(collector_flow_rates),
+        "oil_exit_temps": opti.value(oil_exit_temps),
+        "oil_return_temp": opti.value(oil_return_temp),
+        "m_dot": opti.value(m_dot),
+        "T1": opti.value(T1),
+        "T2": opti.value(T2),
+        "Tr": opti.value(Tr),
+        "pump_and_drive_power": opti.value(pump_and_drive_power),
+        "steam_power": opti.value(steam_power),
+        "net_power": opti.value(net_power),
+        "hx_area_error": opti.value(hx_area_error),
     }
 
     return sol, variables
