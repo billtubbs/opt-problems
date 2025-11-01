@@ -17,6 +17,7 @@ dependencies = [
     "numba",
     "pint",
     "pyyaml",
+    "sympy",
     "tqdm",
     "scikit-learn",
     "scikit-optimize",

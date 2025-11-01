@@ -31,6 +31,7 @@ Pump and Flow Calculations
 Collector Line Temperature Calculations
     calculate_collector_oil_exit_temp
     calculate_collector_oil_exit_and_mean_temps
+    calculate_collector_oil_exit_and_mean_temps_no_loss
     calculate_mixed_oil_exit_temp
     calculate_rms_oil_exit_temps
 
@@ -67,6 +68,7 @@ import casadi as cas
 # Collector lines
 COLLECTOR_D_INT = 0.066  # m
 COLLECTOR_D_OUT = 0.07  # m
+COLLECTOR_LENGTH = 96.0  # m
 
 # Collector FCV parameters
 COLLECTOR_VALVE_RANGEABILITY = 50.0
@@ -87,8 +89,8 @@ PUMP_QMAX = 224.6293
 PUMP_EXPONENT = 4.346734
 
 # Oil properties - static
-OIL_RHO = 636.52  # Kg/m^3 (Syltherm800 at 330 deg C)
-OIL_RHO_CP = OIL_RHO * 2.138  # kJ/m^3-K (Syltherm800 at 330 deg C)
+OIL_RHO = 636.52  # Kg/m^3 (Syltherm800 at 330 °C)
+OIL_RHO_CP = OIL_RHO * 2.138  # kJ/m^3-K (Syltherm800 at 330 °C)
 
 # Time-varying property correlations for Syltherm800
 OIL_T_min_C = 200  # degC
@@ -582,6 +584,7 @@ def calculate_collector_oil_exit_temp(
     h_outer=H_OUTER,
     oil_rho_cp=OIL_RHO_CP,
     d_out=COLLECTOR_D_OUT,
+    collector_length=COLLECTOR_LENGTH,
     exp=cas.exp,
     pi=cas.pi,
 ):
@@ -593,7 +596,7 @@ def calculate_collector_oil_exit_temp(
         / (2 * 1000 * h_outer)
     ) + ambient_temp
     tau = (flow_rate / 3600) * oil_rho_cp / pi / h_outer / d_out
-    alpha = -96 / tau
+    alpha = -collector_length / tau
     exit_temp = equil_temp - (equil_temp - inlet_temp) * exp(alpha)
     return exit_temp
 
@@ -608,6 +611,7 @@ def calculate_collector_oil_exit_and_mean_temps(
     h_outer=H_OUTER,
     oil_rho_cp=OIL_RHO_CP,
     d_out=COLLECTOR_D_OUT,
+    collector_length=COLLECTOR_LENGTH,
     exp=cas.exp,
     pi=cas.pi,
 ):
@@ -618,12 +622,87 @@ def calculate_collector_oil_exit_and_mean_temps(
         * loop_thermal_efficiency
         / (2 * 1000 * h_outer)
     ) + ambient_temp
-    tau = (flow_rate / 3600) * oil_rho_cp / pi / h_outer / d_out
-    alpha = 96 / tau
+    tau = flow_rate * oil_rho_cp / (3600 * h_outer * pi * d_out)
+    alpha = collector_length / tau
     exp_m_alpha = exp(-alpha)
     exit_temp = equil_temp - (equil_temp - inlet_temp) * exp_m_alpha
     f = (alpha - 1 + exp_m_alpha) / (alpha * (1 - exp_m_alpha))
     mean_temp = inlet_temp + f * (exit_temp - inlet_temp)
+    return exit_temp, mean_temp
+
+
+def calculate_collector_oil_exit_and_mean_temps_no_loss(
+    flow_rate,
+    inlet_temp,
+    solar_rate,
+    loop_thermal_efficiency,
+    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
+    oil_rho_cp=OIL_RHO_CP,
+    d_out=COLLECTOR_D_OUT,
+    collector_length=COLLECTOR_LENGTH,
+    pi=cas.pi,
+):
+    """Calculate oil exit temperature for a collector loop assuming no heat
+    losses to ambient (i.e. h_outer = 0).
+
+    With no heat losses, the energy balance simplifies to:
+    - All absorbed solar energy goes into heating the oil
+    - Exit temperature = inlet temperature + temperature rise from solar
+      heating
+
+    The solar energy is absorbed on half of the outer pipe surface area
+    (π * d_out * collector_length / 2) and concentrated by the parabolic
+    mirrors.
+
+    Parameters
+    ----------
+    flow_rate : float
+        Oil flow rate (m³/h)
+    inlet_temp : float
+        Oil inlet temperature (°C)
+    solar_rate : float
+        Solar irradiation rate (W/m²)
+    loop_thermal_efficiency : float
+        Thermal efficiency of collector loop (dimensionless)
+    mirror_concentration_factor : float, optional
+        Mirror concentration factor (dimensionless), default:
+        MIRROR_CONCENTRATION_FACTOR
+    oil_rho_cp : float, optional
+        Oil volumetric heat capacity (kJ/m³-K), default: OIL_RHO_CP
+    d_out : float, optional
+        Outer diameter of collector pipe (m), default: COLLECTOR_D_OUT
+    collector_length : float, optional
+        Length of collector (m), default: COLLECTOR_LENGTH
+    pi : function, optional
+        Provide an alternate value/function for pi, default: cas.pi
+
+    Returns
+    -------
+    exit_temp : float
+        Oil exit temperature (°C)
+    mean_temp : float
+        Mean oil temperature (°C)
+    """
+    # Solar heat input (kW)
+    Q_solar = (
+        solar_rate
+        * mirror_concentration_factor
+        * loop_thermal_efficiency
+        * collector_length
+        * pi
+        * d_out
+        / (2 * 1000)
+    )
+
+    # Temperature rise from solar heating (°C)
+    delta_T = Q_solar / ((flow_rate / 3600) * oil_rho_cp)
+
+    # Exit temperature
+    exit_temp = inlet_temp + delta_T
+
+    # Mean temperature (simple average for uniform heating)
+    mean_temp = (inlet_temp + exit_temp) / 2
+
     return exit_temp, mean_temp
 
 
@@ -842,8 +921,8 @@ def calculate_Q_dot_hx1(
     Args:
         m_dot: Mass flow rate of water/steam (kg/s)
         cp_steam: Specific heat capacity of steam (kJ/kg-K)
-        T_steam_sp: Steam setpoint temperature (deg C)
-        T_boil: Boiling temperature (deg C)
+        T_steam_sp: Steam setpoint temperature (°C)
+        T_boil: Boiling temperature (°C)
 
     Returns:
         Heat transfer rate (kW)
@@ -874,8 +953,8 @@ def calculate_Q_dot_hx3(
     Args:
         m_dot: Mass flow rate of water/steam (kg/s)
         cp_water: Specific heat capacity of water (kJ/kg-K)
-        T_boil: Boiling temperature (deg C)
-        T_condensate: Condensate temperature (deg C)
+        T_boil: Boiling temperature (°C)
+        T_condensate: Condensate temperature (°C)
 
     Returns:
         Heat transfer rate (kW)
@@ -889,7 +968,7 @@ def calculate_hx_area(Q_dot, dtlm, U):
 
     Args:
         Q_dot: Heat transfer rate (kW)
-        dtlm: Log mean temperature difference (deg C)
+        dtlm: Log mean temperature difference (°C)
         U: Heat transfer coefficient (W/m^2-K)
 
     Returns:
@@ -919,18 +998,18 @@ def calculate_hx_temperatures(
 
     Args:
         m_dot: Mass flow rate of water/steam (kg/s)
-        mixed_oil_exit_temp: Mixed oil exit temperature from collectors (deg C)
+        mixed_oil_exit_temp: Mixed oil exit temperature from collectors (°C)
         oil_flow_rate: Thermal oil flow rate (kg/s)
         cp_steam: Specific heat capacity of steam (kJ/kg-K)
-        T_steam_sp: Steam setpoint temperature (deg C)
-        T_boil: Boiling temperature (deg C)
+        T_steam_sp: Steam setpoint temperature (°C)
+        T_boil: Boiling temperature (°C)
         cp_water: Specific heat capacity of water (kJ/kg-K)
-        T_condensate: Condensate temperature (deg C)
+        T_condensate: Condensate temperature (°C)
         h_vap: Heat of vaporization (kJ/kg)
         oil_rho_cp: Oil volumetric heat capacity (kJ/m^3-K)
 
     Returns:
-        tuple: (T1, T2, Tr) - Oil temperatures after HX1, HX2, and HX3 (deg C)
+        tuple: (T1, T2, Tr) - Oil temperatures after HX1, HX2, and HX3 (°C)
             T1: Oil temperature after HX1 (Excel BH31)
             T2: Oil temperature after HX2 (Excel BI31)
             Tr: Oil return temperature after HX3 (Excel BJ31)
@@ -1006,21 +1085,21 @@ def heat_exchanger_solution_error(
         - Tr > T_condensate (default: > 60°C)
 
     Args:
-        T1: Oil temperature after HX1 (deg C)
-        T2: Oil temperature after HX2 (deg C)
-        Tr: Oil return temperature after HX3 (deg C)
+        T1: Oil temperature after HX1 (°C)
+        T2: Oil temperature after HX2 (°C)
+        Tr: Oil return temperature after HX3 (°C)
         m_dot: Mass flow rate of water/steam (kg/s)
         oil_flow_rate: Thermal oil flow rate (kg/s)
-        mixed_oil_exit_temp: Mixed oil exit temperature from collectors (deg C)
-        T_steam_sp: Steam setpoint temperature (deg C)
+        mixed_oil_exit_temp: Mixed oil exit temperature from collectors (°C)
+        T_steam_sp: Steam setpoint temperature (°C)
         U_steam: Nominal heat transfer coefficient for steam (W/m^2-K)
         U_boil: Nominal heat transfer coefficient for boiling (W/m^2-K)
         U_liquid: Nominal heat transfer coefficient for liquid (W/m^2-K)
         hx_area: Total available heat exchanger area (m^2)
         F_oil_nominal: Nominal oil flow rate for U coefficient (m^3/s)
         cp_water: Specific heat capacity of water (kJ/kg-K)
-        T_boil: Boiling temperature (deg C)
-        T_condensate: Condensate temperature (deg C)
+        T_boil: Boiling temperature (°C)
+        T_condensate: Condensate temperature (°C)
         cp_steam: Specific heat capacity of steam (kJ/kg-K)
         h_vap: Heat of vaporization (kJ/kg)
         log: Provide an alternate function for log operations
@@ -1159,7 +1238,7 @@ def solar_plant_gen_rto_solve(
     Parameters
     ----------
     ambient_temp : float
-        Ambient temperature (deg C)
+        Ambient temperature (°C)
     solar_rate : float
         Solar irradiation rate (W/m^2)
     n_lines : int
@@ -1173,7 +1252,7 @@ def solar_plant_gen_rto_solve(
     m_dot_init : float, optional
         Initial guess for steam mass flow rate (kg/s) (default: 1.2)
     oil_return_temp_init : float, optional
-        Initial guess for oil return temperature (deg C) (default: 270.0)
+        Initial guess for oil return temperature (°C) (default: 270.0)
     rangeability : float, optional
         Valve rangeability parameter
     g_squiggle : float, optional
@@ -1185,7 +1264,7 @@ def solar_plant_gen_rto_solve(
     pump_speed_max : float, optional
         Maximum pump speed (RPM)
     max_oil_exit_temps : float or array, optional
-        Maximum oil exit temperatures for each line (deg C)
+        Maximum oil exit temperatures for each line (°C)
     cv : float, optional
         Valve flow coefficient
     loop_thermal_efficiencies : list or array, optional
@@ -1199,7 +1278,7 @@ def solar_plant_gen_rto_solve(
     d_out : float, optional
         Outer diameter of collector tube (m)
     T_steam_sp : float, optional
-        Steam setpoint temperature (deg C)
+        Steam setpoint temperature (°C)
     U_steam : float, optional
         Nominal heat transfer coefficient for steam (W/m^2-K)
     U_boil : float, optional
@@ -1213,9 +1292,9 @@ def solar_plant_gen_rto_solve(
     cp_water : float, optional
         Specific heat capacity of water (kJ/kg-K)
     T_boil : float, optional
-        Boiling temperature (deg C)
+        Boiling temperature (°C)
     T_condensate : float, optional
-        Condensate temperature (deg C)
+        Condensate temperature (°C)
     turbine_delta_h : float, optional
         Turbine enthalpy drop (kJ/kg)
     cp_steam : float, optional
@@ -1240,10 +1319,10 @@ def solar_plant_gen_rto_solve(
         - valve_positions: Optimal valve positions
         - pump_speed_scaled: Optimal scaled pump speed
         - collector_flow_rates: Flow rates for each collector line (kg/s)
-        - oil_exit_temps: Oil exit temperatures for each collector line (deg C)
-        - oil_return_temp: Optimal oil return temperature (deg C)
+        - oil_exit_temps: Oil exit temperatures for each collector line (°C)
+        - oil_return_temp: Optimal oil return temperature (°C)
         - m_dot: Optimal steam mass flow rate (kg/s)
-        - T1, T2, Tr: Oil temperatures through heat exchangers (deg C)
+        - T1, T2, Tr: Oil temperatures through heat exchangers (°C)
         - pump_and_drive_power: Pump and drive power (kW)
         - steam_power: Steam power output (kW)
         - net_power: Net power output (kW)
@@ -1414,13 +1493,13 @@ def steam_generator_solve(
     Parameters
     ----------
     mixed_oil_exit_temp : float
-        Mixed oil exit temperature from collectors (deg C)
+        Mixed oil exit temperature from collectors (°C)
     oil_flow_rate : float
         Total oil flow rate (kg/s)
     m_dot_init : float, optional
         Initial guess for steam mass flow rate (kg/s) (default: 1.2)
     T_steam_sp : float, optional
-        Steam setpoint temperature (deg C)
+        Steam setpoint temperature (°C)
     U_steam : float, optional
         Nominal heat transfer coefficient for steam (W/m^2-K)
     U_boil : float, optional
@@ -1434,9 +1513,9 @@ def steam_generator_solve(
     cp_water : float, optional
         Specific heat capacity of water (kJ/kg-K)
     T_boil : float, optional
-        Boiling temperature (deg C)
+        Boiling temperature (°C)
     T_condensate : float, optional
-        Condensate temperature (deg C)
+        Condensate temperature (°C)
     turbine_delta_h : float, optional
         Turbine enthalpy drop (kJ/kg)
     cp_steam : float, optional
@@ -1457,7 +1536,7 @@ def steam_generator_solve(
     variables : dict
         Dictionary containing optimized variables and outputs including:
         - m_dot: Optimal steam mass flow rate (kg/s)
-        - T1, T2, Tr: Oil temperatures through heat exchangers (deg C)
+        - T1, T2, Tr: Oil temperatures through heat exchangers (°C)
         - steam_power: Steam power output (kW)
         - hx_area_error: Heat exchanger area constraint residual
     """
@@ -1580,9 +1659,9 @@ def solar_plant_rto_solve(
     solar_rate : float
         Solar irradiation rate (W/m^2)
     ambient_temp : float
-        Ambient temperature (deg C)
+        Ambient temperature (°C)
     oil_return_temp : float
-        Oil return temperature (deg C)
+        Oil return temperature (°C)
     m_pumps : int
         Number of pumps operating
     n_lines : int
@@ -1614,7 +1693,7 @@ def solar_plant_rto_solve(
     d_out : float, optional
         Outer diameter of collector tube (m)
     max_oil_exit_temps : list or array, optional
-        Maximum oil exit temperatures for each line (deg C)
+        Maximum oil exit temperatures for each line (°C)
     sum : function, optional
         Provide an alternate function for sum operations
     sqrt : function, optional
@@ -1631,7 +1710,7 @@ def solar_plant_rto_solve(
     variables : dict
         Dictionary containing optimized variables and outputs including:
         - valve_positions: Optimal valve positions
-        - oil_exit_temps: Oil exit temperatures for each collector line (deg C)
+        - oil_exit_temps: Oil exit temperatures for each collector line (°C)
         - collector_flow_rates: Flow rates for each collector line (kg/s)
         - pump_speed_scaled: Optimal scaled pump speed
         - pump_and_drive_power: Pump and drive power (kW)
@@ -1810,7 +1889,7 @@ def solar_plant_gen_db_rto_solve(
     Parameters
     ----------
     ambient_temp : float
-        Ambient temperature (deg C)
+        Ambient temperature (°C)
     solar_rate : float
         Solar irradiation rate (W/m^2)
     n_lines : int
@@ -1824,7 +1903,7 @@ def solar_plant_gen_db_rto_solve(
     m_dot_init : float, optional
         Initial guess for steam mass flow rate (kg/s) (default: 1.2)
     oil_return_temp_init : float, optional
-        Initial guess for oil return temperature (deg C) (default: 270.0)
+        Initial guess for oil return temperature (°C) (default: 270.0)
     rangeability : float, optional
         Valve rangeability parameter
     g_squiggle : float, optional
@@ -1836,7 +1915,7 @@ def solar_plant_gen_db_rto_solve(
     pump_speed_max : float, optional
         Maximum pump speed (RPM)
     max_oil_exit_temps : float or array, optional
-        Maximum oil exit temperatures for each line (deg C)
+        Maximum oil exit temperatures for each line (°C)
     cv : float, optional
         Valve flow coefficient
     loop_thermal_efficiencies : list or array, optional
@@ -1850,7 +1929,7 @@ def solar_plant_gen_db_rto_solve(
     d_out : float, optional
         Outer diameter of collector tube (m)
     T_steam_sp : float, optional
-        Steam setpoint temperature (deg C)
+        Steam setpoint temperature (°C)
     U_steam : float, optional
         Nominal heat transfer coefficient for steam (W/m^2-K)
     U_boil : float, optional
@@ -1864,9 +1943,9 @@ def solar_plant_gen_db_rto_solve(
     cp_water : float, optional
         Specific heat capacity of water (kJ/kg-K)
     T_boil : float, optional
-        Boiling temperature (deg C)
+        Boiling temperature (°C)
     T_condensate : float, optional
-        Condensate temperature (deg C)
+        Condensate temperature (°C)
     turbine_delta_h : float, optional
         Turbine enthalpy drop (kJ/kg)
     cp_steam : float, optional
@@ -1891,10 +1970,10 @@ def solar_plant_gen_db_rto_solve(
         - valve_positions: Optimal valve positions
         - pump_speed_scaled: Optimal scaled pump speed
         - collector_flow_rates: Flow rates for each collector line (kg/s)
-        - oil_exit_temps: Oil exit temperatures for each collector line (deg C)
-        - oil_return_temp: Optimal oil return temperature (deg C)
+        - oil_exit_temps: Oil exit temperatures for each collector line (°C)
+        - oil_return_temp: Optimal oil return temperature (°C)
         - m_dot: Optimal steam mass flow rate (kg/s)
-        - T1, T2, Tr: Oil temperatures through heat exchangers (deg C)
+        - T1, T2, Tr: Oil temperatures through heat exchangers (°C)
         - pump_and_drive_power: Pump and drive power (kW)
         - steam_power: Steam power output (kW)
         - net_power: Net power output (kW)

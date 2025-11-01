@@ -17,6 +17,10 @@ from problems.solar_plant_rto.solar_plant_gen_rto import (
     calculate_collector_flow_rate,
     calculate_collector_oil_exit_and_mean_temps,
     calculate_collector_oil_exit_temp,
+    calculate_fluid_density,
+    calculate_fluid_heat_capacity,
+    calculate_fluid_thermal_conductivity,
+    calculate_fluid_viscosity,
     calculate_hx_temperatures,
     calculate_net_power,
     calculate_pressure_balance,
@@ -26,10 +30,6 @@ from problems.solar_plant_rto.solar_plant_gen_rto import (
     calculate_rms_oil_exit_temps,
     calculate_steam_power,
     calculate_total_oil_flowrate,
-    calculate_fluid_density,
-    calculate_fluid_heat_capacity,
-    calculate_fluid_thermal_conductivity,
-    calculate_fluid_viscosity,
     heat_exchanger_solution_error,
     make_calculate_collector_exit_temps_and_pump_power,
     make_pressure_balance_function,
@@ -226,6 +226,7 @@ test_data = {
 #   - collector valve flowrate formula changed
 #   - change to calculate_pump_dp
 #   - collector outlet temp formula changed (a, b)
+#   - area = L * pi * D or simply L*D?
 #   - What is T_forecast?  Is it supposed to match mixed T oil?
 #   - What is N_pumps in calculate_boiler_dp
 #   - How to vary steam T setpoint?  With inlet oil temp?
