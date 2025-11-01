@@ -574,6 +574,101 @@ def make_calculate_pump_and_drive_power_function(
 # =============================================================================
 
 
+def solar_heat_input(
+    solar_rate,
+    loop_thermal_efficiency,
+    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
+    d_out=COLLECTOR_D_OUT,
+    collector_length=COLLECTOR_LENGTH,
+    pi=cas.pi,
+):
+    """Calculate solar heat input (kW)
+
+    The solar energy is concentrated by the parabolic mirrors and absorbed
+    on half of the outer pipe surface area (π * d_out * collector_length / 2).
+    """
+    Q_solar = (
+        solar_rate
+        * mirror_concentration_factor
+        * loop_thermal_efficiency
+        * collector_length
+        * pi
+        * d_out
+        / (2 * 1000)
+    )
+    return Q_solar
+
+
+def calculate_collector_oil_exit_and_mean_temps_no_loss(
+    flow_rate,
+    inlet_temp,
+    solar_rate,
+    loop_thermal_efficiency,
+    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
+    oil_rho_cp=OIL_RHO_CP,
+    d_out=COLLECTOR_D_OUT,
+    collector_length=COLLECTOR_LENGTH,
+    pi=cas.pi,
+):
+    """Calculate oil exit temperature for a collector loop assuming no heat
+    losses to ambient (i.e. h_outer = 0).
+
+    With no heat losses, the energy balance simplifies to:
+    - All absorbed solar energy goes into heating the oil
+    - Exit temperature = inlet temperature + temperature rise from solar
+      heating
+
+    Parameters
+    ----------
+    flow_rate : float
+        Oil flow rate (m³/h)
+    inlet_temp : float
+        Oil inlet temperature (°C)
+    solar_rate : float
+        Solar irradiation rate (W/m²)
+    loop_thermal_efficiency : float
+        Thermal efficiency of collector loop (dimensionless)
+    mirror_concentration_factor : float, optional
+        Mirror concentration factor (dimensionless), default:
+        MIRROR_CONCENTRATION_FACTOR
+    oil_rho_cp : float, optional
+        Oil volumetric heat capacity (kJ/m³-K), default: OIL_RHO_CP
+    d_out : float, optional
+        Outer diameter of collector pipe (m), default: COLLECTOR_D_OUT
+    collector_length : float, optional
+        Length of collector (m), default: COLLECTOR_LENGTH
+    pi : function, optional
+        Provide an alternate value/function for pi, default: cas.pi
+
+    Returns
+    -------
+    exit_temp : float
+        Oil exit temperature (°C)
+    mean_temp : float
+        Mean oil temperature (°C)
+    """
+    # Solar heat input (kW)
+    Q_solar = solar_heat_input(
+        solar_rate,
+        loop_thermal_efficiency,
+        mirror_concentration_factor=mirror_concentration_factor,
+        d_out=d_out,
+        collector_length=collector_length,
+        pi=pi,
+    )
+
+    # Temperature rise from solar heating (°C)
+    delta_T = Q_solar / ((flow_rate / 3600) * oil_rho_cp)
+
+    # Exit temperature
+    exit_temp = inlet_temp + delta_T
+
+    # Mean temperature (simple average for uniform heating)
+    mean_temp = (inlet_temp + exit_temp) / 2
+
+    return exit_temp, mean_temp
+
+
 def calculate_collector_oil_exit_temp(
     flow_rate,
     inlet_temp,
@@ -628,81 +723,6 @@ def calculate_collector_oil_exit_and_mean_temps(
     exit_temp = equil_temp - (equil_temp - inlet_temp) * exp_m_alpha
     f = (alpha - 1 + exp_m_alpha) / (alpha * (1 - exp_m_alpha))
     mean_temp = inlet_temp + f * (exit_temp - inlet_temp)
-    return exit_temp, mean_temp
-
-
-def calculate_collector_oil_exit_and_mean_temps_no_loss(
-    flow_rate,
-    inlet_temp,
-    solar_rate,
-    loop_thermal_efficiency,
-    mirror_concentration_factor=MIRROR_CONCENTRATION_FACTOR,
-    oil_rho_cp=OIL_RHO_CP,
-    d_out=COLLECTOR_D_OUT,
-    collector_length=COLLECTOR_LENGTH,
-    pi=cas.pi,
-):
-    """Calculate oil exit temperature for a collector loop assuming no heat
-    losses to ambient (i.e. h_outer = 0).
-
-    With no heat losses, the energy balance simplifies to:
-    - All absorbed solar energy goes into heating the oil
-    - Exit temperature = inlet temperature + temperature rise from solar
-      heating
-
-    The solar energy is absorbed on half of the outer pipe surface area
-    (π * d_out * collector_length / 2) and concentrated by the parabolic
-    mirrors.
-
-    Parameters
-    ----------
-    flow_rate : float
-        Oil flow rate (m³/h)
-    inlet_temp : float
-        Oil inlet temperature (°C)
-    solar_rate : float
-        Solar irradiation rate (W/m²)
-    loop_thermal_efficiency : float
-        Thermal efficiency of collector loop (dimensionless)
-    mirror_concentration_factor : float, optional
-        Mirror concentration factor (dimensionless), default:
-        MIRROR_CONCENTRATION_FACTOR
-    oil_rho_cp : float, optional
-        Oil volumetric heat capacity (kJ/m³-K), default: OIL_RHO_CP
-    d_out : float, optional
-        Outer diameter of collector pipe (m), default: COLLECTOR_D_OUT
-    collector_length : float, optional
-        Length of collector (m), default: COLLECTOR_LENGTH
-    pi : function, optional
-        Provide an alternate value/function for pi, default: cas.pi
-
-    Returns
-    -------
-    exit_temp : float
-        Oil exit temperature (°C)
-    mean_temp : float
-        Mean oil temperature (°C)
-    """
-    # Solar heat input (kW)
-    Q_solar = (
-        solar_rate
-        * mirror_concentration_factor
-        * loop_thermal_efficiency
-        * collector_length
-        * pi
-        * d_out
-        / (2 * 1000)
-    )
-
-    # Temperature rise from solar heating (°C)
-    delta_T = Q_solar / ((flow_rate / 3600) * oil_rho_cp)
-
-    # Exit temperature
-    exit_temp = inlet_temp + delta_T
-
-    # Mean temperature (simple average for uniform heating)
-    mean_temp = (inlet_temp + exit_temp) / 2
-
     return exit_temp, mean_temp
 
 
