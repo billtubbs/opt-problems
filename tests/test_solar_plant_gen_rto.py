@@ -33,6 +33,7 @@ from problems.solar_plant_rto.solar_plant_gen_rto import (
     heat_exchanger_solution_error,
     make_calculate_collector_exit_temps_and_pump_power,
     make_pressure_balance_function,
+    solar_heat_input,
     solar_plant_gen_rto_solve,
     solar_plant_rto_solve,
 )
@@ -229,7 +230,7 @@ test_data = {
 #   - area = L * pi * D or simply L*D?
 #   - What is T_forecast?  Is it supposed to match mixed T oil?
 #   - What is N_pumps in calculate_boiler_dp
-#   - How to vary steam T setpoint?  With inlet oil temp?
+#   - Should T steam SP be fixed or variable? Vary with inlet oil temp?
 #   - Oil density of 800 is too high; Slytherm 636.52 kg/m^3
 #   - Luis calculates higher flowrates and velocities now
 
@@ -328,7 +329,8 @@ class TestFluidProperties:
         T_K = T_C + 273.15  # Convert to Kelvin
         expected_visc = 0.25e-3  # 0.25 mPa·s = 0.25e-3 Pa·s
         calculated_visc = calculate_fluid_viscosity(T_K, exp=np.exp)
-        # Allow 6% tolerance for exponential correlation fit at high temperature
+        # Allow 6% tolerance for exponential correlation fit at
+        # high temperature
         assert np.isclose(calculated_visc, expected_visc, rtol=0.06), (
             f"Expected {expected_visc}, got {calculated_visc}"
         )
@@ -541,7 +543,9 @@ class TestOilTemperatureCalculations:
         assert np.isclose(rms_dev, test_data["rms_dev"], atol=0.00001)
 
     def test_calculate_collector_oil_exit_and_mean_temps_single(self):
-        """Test oil exit and mean temperature calculation for single collector."""
+        """Test oil exit and mean temperature calculation for single
+        collector.
+        """
         flow_rate = test_data["collector_flow_rates"][0]
         inlet_temp = test_data["oil_return_temp"]
         ambient_temp = test_data["ambient_temp"]
@@ -571,7 +575,9 @@ class TestOilTemperatureCalculations:
         assert np.isclose(mean_temp, test_data["oil_mean_temps"][0])
 
     def test_calculate_collector_oil_exit_and_mean_temps_vectorized(self):
-        """Test oil exit and mean temperature calculation for multiple collectors."""
+        """Test oil exit and mean temperature calculation for multiple
+        collectors.
+        """
         collector_flow_rates = cas.DM(test_data["collector_flow_rates"])
         inlet_temp = test_data["oil_return_temp"]
         ambient_temp = test_data["ambient_temp"]
@@ -605,6 +611,32 @@ class TestOilTemperatureCalculations:
         assert np.allclose(
             mean_temps, test_data["oil_mean_temps"].reshape(-1, 1)
         )
+
+    def test_solar_heat_input(self):
+        """Test solar heat input calculation."""
+        solar_rate = test_data["solar_rate"]
+        loop_thermal_efficiency = test_data["loop_thermal_efficiencies"][0]
+        mirror_concentration_factor = test_params[
+            "mirror_concentration_factor"
+        ]
+        d_out = test_params["d_out"]
+
+        # Default collector_length is 96.0 m
+        # Expected Q_solar = solar_rate * mirror_concentration_factor *
+        #     loop_thermal_efficiency * (pi * d_out * length / 2) / 1000
+        # With values: 700 * 52 * 0.9 * (pi * 0.07 * 96.0 / 2) / 1000
+        # = 700 * 52 * 0.9 * 10.553096491487338 / 1000
+        # = 345.942 kW
+        expected_Q_solar = 345.942
+
+        Q_solar = solar_heat_input(
+            solar_rate,
+            loop_thermal_efficiency,
+            mirror_concentration_factor=mirror_concentration_factor,
+            d_out=d_out,
+            pi=np.pi,
+        )
+        assert np.isclose(Q_solar, expected_Q_solar, rtol=0.001)
 
 
 class TestCasADiFunctions:

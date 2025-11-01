@@ -587,14 +587,13 @@ def solar_heat_input(
     The solar energy is concentrated by the parabolic mirrors and absorbed
     on half of the outer pipe surface area (π * d_out * collector_length / 2).
     """
+    area_out = pi * d_out * collector_length / 2
     Q_solar = (
         solar_rate
         * mirror_concentration_factor
         * loop_thermal_efficiency
-        * collector_length
-        * pi
-        * d_out
-        / (2 * 1000)
+        * area_out
+        / 1000
     )
     return Q_solar
 
@@ -690,7 +689,7 @@ def calculate_collector_oil_exit_temp(
         * loop_thermal_efficiency
         / (2 * 1000 * h_outer)
     ) + ambient_temp
-    tau = (flow_rate / 3600) * oil_rho_cp / pi / h_outer / d_out
+    tau = flow_rate * oil_rho_cp / (3600 * h_outer * pi * d_out)
     alpha = -collector_length / tau
     exit_temp = equil_temp - (equil_temp - inlet_temp) * exp(alpha)
     return exit_temp
