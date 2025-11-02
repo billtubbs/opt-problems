@@ -21,6 +21,7 @@ Pump and Flow Calculations
     calculate_pump_and_drive_efficiency
     calculate_pump_fluid_power
     calculate_collector_flow_rate
+    calculate_valve_position_from_flow_rate
     calculate_total_oil_flowrate
     calculate_boiler_dp
     calculate_pump_dp
@@ -65,6 +66,10 @@ import casadi as cas
 # DEFAULT PARAMETERS & CONSTANTS
 # =============================================================================
 
+# Oil properties - static
+OIL_RHO = 636.52  # Kg/m^3 (Syltherm800 at 330 °C)
+OIL_RHO_CP = OIL_RHO * 2.138  # kJ/m^3-K (Syltherm800 at 330 °C)
+
 # Collector lines
 COLLECTOR_D_INT = 0.066  # m
 COLLECTOR_D_OUT = 0.07  # m
@@ -77,20 +82,18 @@ COLLECTOR_VALVE_ALPHA = 0.05 * (
     850 / 30**2 - 0.671 / (10 * (50 ** (0.95 - 1)) ** 2) ** 2
 )
 COLLECTOR_VALVE_CV = 10.0
-MIRROR_CONCENTRATION_FACTOR = 52
+MIRROR_CONCENTRATION_FACTOR = 52.0  # based on half of underside area
 H_OUTER = 0.00361  # kW/m2-K
 
 # Oil pumps and flows
 PUMP_SPEED_MIN = 1000
 PUMP_SPEED_MAX = 2970
 BOILER_FLOW_LOSS_FACTOR = 0.038
-PUMP_DP_MAX = 1004.2368
+PUMP_HEAD = 128.0  # m
+G = 9.807  # m^2/s
+PUMP_DP_MAX = PUMP_HEAD * 800 * G / 1 / 1000.0  # TODO: Density is inconsistent
 PUMP_QMAX = 224.6293
 PUMP_EXPONENT = 4.346734
-
-# Oil properties - static
-OIL_RHO = 636.52  # Kg/m^3 (Syltherm800 at 330 °C)
-OIL_RHO_CP = OIL_RHO * 2.138  # kJ/m^3-K (Syltherm800 at 330 °C)
 
 # Time-varying property correlations for Syltherm800
 OIL_T_min_C = 200  # degC
@@ -351,6 +354,28 @@ def calculate_collector_flow_rate(
     f = rangeability ** (valve_position - 1.0)
     flow_rate = cv * f * sqrt(loop_dp / (g_squiggle + alpha * (cv * f) ** 2))
     return flow_rate
+
+
+def calculate_valve_position_from_flow_rate(
+    flow_rate,
+    loop_dp,
+    rangeability=COLLECTOR_VALVE_RANGEABILITY,
+    g_squiggle=COLLECTOR_VALVE_G_SQUIGGLE,
+    alpha=COLLECTOR_VALVE_ALPHA,
+    cv=COLLECTOR_VALVE_CV,
+    sqrt=cas.sqrt,
+    log=cas.log,
+):
+    """Calculate valve position from flow rate through a collector loop
+    and loop dp.
+    """
+    # Calculate intermediate variable f
+    f = (flow_rate / cv) * sqrt(g_squiggle / (loop_dp - flow_rate**2 * alpha))
+
+    # Calculate valve position from f
+    valve_position = log(f) / log(rangeability) + 1.0
+
+    return valve_position
 
 
 def calculate_total_oil_flowrate(

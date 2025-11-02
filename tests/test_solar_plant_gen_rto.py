@@ -30,6 +30,7 @@ from problems.solar_plant_rto.solar_plant_gen_rto import (
     calculate_rms_oil_exit_temps,
     calculate_steam_power,
     calculate_total_oil_flowrate,
+    calculate_valve_position_from_flow_rate,
     heat_exchanger_solution_error,
     make_calculate_collector_exit_temps_and_pump_power,
     make_pressure_balance_function,
@@ -222,15 +223,17 @@ test_data = {
 
 # TODO: Check with Russ
 # Items changed compared t0 test_solar_plant_rto.py:
-#   - m_pumps: 2 -> 3
+#   - m_pumps: 2 -> 3.  - this is arbitrary
 #   - pump_speed_scaled (min): 0.2 -> 0.3
-#   - collector valve flowrate formula changed
+#   - collector valve flowrate formula changed - improved valve coefficient
 #   - change to calculate_pump_dp
-#   - collector outlet temp formula changed (a, b)
-#   - area = L * pi * D or simply L*D?
+#   - collector outlet temp formula changed (a, b). - coefficients
+#   - area = L * pi * D or simply L*D. - effective area = actual area
 #   - What is T_forecast?  Is it supposed to match mixed T oil?
+#   - In my model T_return comes straight from T_r - Ignores the tank and heat losses
 #   - What is N_pumps in calculate_boiler_dp
 #   - Should T steam SP be fixed or variable? Vary with inlet oil temp?
+#   - Why do we let HX areas vary?  Level in HX may adjust.
 #   - Oil density of 800 is too high; Slytherm 636.52 kg/m^3
 #   - Luis calculates higher flowrates and velocities now
 
@@ -390,6 +393,31 @@ class TestPumpAndFlowCalculations:
         )
         assert np.isclose(
             collector_flow_rate, test_data["collector_flow_rates"][1]
+        )
+
+    def test_calculate_valve_position_from_flow_rate(self):
+        """Test valve position calculation from flow rate (inverse of
+        calculate_collector_flow_rate).
+        """
+        flow_rate = test_data["collector_flow_rates"][1]
+        loop_dp = test_data["loop_dp"]
+        rangeability = test_params["rangeability"]
+        g_squiggle = test_params["g_squiggle"]
+        alpha = test_params["alpha"]
+        cv = test_params["cv"]
+
+        valve_position = calculate_valve_position_from_flow_rate(
+            flow_rate,
+            loop_dp,
+            rangeability=rangeability,
+            g_squiggle=g_squiggle,
+            alpha=alpha,
+            cv=cv,
+            sqrt=np.sqrt,
+            log=np.log,
+        )
+        assert np.isclose(
+            valve_position, test_data["valve_positions"][1]
         )
 
     def test_calculate_total_oil_flowrate(self):
